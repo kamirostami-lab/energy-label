@@ -1,0 +1,3 @@
+#!/bin/sh
+# Blocks secrets and secret files from being committed (Build Brief 01, section 11).
+exec node scripts/check-secrets.mjs --staged

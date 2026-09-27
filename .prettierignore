@@ -1,0 +1,4 @@
+pnpm-lock.yaml
+test/fixtures/
+packages/panel/src/font/*.generated.ts
+packages/panel/fonts/

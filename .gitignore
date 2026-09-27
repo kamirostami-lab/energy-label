@@ -1,0 +1,17 @@
+node_modules/
+dist/
+build/
+.svelte-kit/
+.wrangler/
+coverage/
+*.log
+.DS_Store
+
+# Secrets never enter the repository: Wrangler secrets and the Cloudflare dashboard only.
+.dev.vars
+.dev.vars.*
+.env
+.env.*
+
+# Local review output (fixture previews, scratch renders)
+.preview/

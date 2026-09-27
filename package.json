@@ -1,0 +1,29 @@
+{
+  "name": "energy-panel",
+  "private": true,
+  "description": "Energy Panel: FSANZ alcohol energy statement generator and label preflight (Komms-Haus).",
+  "type": "module",
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "prepare": "git config core.hooksPath .githooks || true",
+    "check": "pnpm format:check && pnpm typecheck && pnpm test && pnpm rules:check && pnpm glyphs:check && pnpm secrets:check",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test && node --test scripts/*.test.mjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "rules:check": "pnpm --filter @energy-panel/rules rules:check",
+    "fixtures:update": "pnpm --filter @energy-panel/panel fixtures:update",
+    "glyphs:build": "pnpm --filter @energy-panel/panel glyphs:build",
+    "glyphs:check": "pnpm --filter @energy-panel/panel glyphs:check",
+    "secrets:check": "node scripts/check-secrets.mjs --all"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.4",
+    "prettier": "^3.9.9",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.2"
+  }
+}
