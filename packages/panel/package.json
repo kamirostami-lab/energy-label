@@ -1,0 +1,23 @@
+{
+  "name": "@energy-panel/panel",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Pure functions that compute and render the FSANZ energy statement as outlined SVG.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json",
+    "test": "vitest run",
+    "glyphs:build": "node --experimental-strip-types scripts/build-glyphs.ts",
+    "glyphs:check": "node --experimental-strip-types scripts/build-glyphs.ts --check",
+    "fixtures:update": "node --experimental-strip-types scripts/update-fixtures.ts"
+  },
+  "dependencies": {
+    "@energy-panel/rules": "workspace:*"
+  },
+  "devDependencies": {
+    "opentype.js": "^2.0.0"
+  }
+}

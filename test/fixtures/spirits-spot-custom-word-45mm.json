@@ -1,0 +1,25 @@
+{
+  "description": "Synthetic inputs: 700 mL spirit at 40% ABV, 30 mL serving (23.3 servings, not a whole number), 924.6 kJ per 100 mL, kJ and Cal, custom package word flask, single spot colour, 45 mm.",
+  "inputs": {
+    "abv": 40,
+    "package_ml": 700,
+    "serving_ml": 30,
+    "kj_per_100ml": 924.6
+  },
+  "options": {
+    "width_mm": 45,
+    "colour": "spot",
+    "energy_units": "kj_cal",
+    "package_word": "flask"
+  },
+  "expected": {
+    "servingsPerPackage": "23.3",
+    "servingSizeMl": "30",
+    "standardDrinksPerServing": "0.9",
+    "energyPerServingKj": "277",
+    "energyPer100mlKj": "925",
+    "energyPerServingCal": "66.3",
+    "energyPer100mlCal": "221",
+    "totalStandardDrinks": "22.1"
+  }
+}

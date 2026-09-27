@@ -1,0 +1,23 @@
+{
+  "description": "First golden fixture: the FSANZ guidance example (12 servings, 60 mL serving, 1 standard drink, 355 kJ per serving, 592 kJ per 100 mL), as quoted in Build Brief 01 section 9. The brief does not state the example's ABV: 21.1% is used because it gives 1.0 standard drink per 60 mL serving. Package volume is 12 x 60 mL = 720 mL. Replace the ABV if the FSANZ example states one.",
+  "inputs": {
+    "abv": 21.1,
+    "package_ml": 720,
+    "serving_ml": 60,
+    "kj_per_100ml": 592
+  },
+  "options": {
+    "width_mm": 50,
+    "colour": "black",
+    "energy_units": "kj",
+    "package_word": "package"
+  },
+  "expected": {
+    "servingsPerPackage": "12",
+    "servingSizeMl": "60",
+    "standardDrinksPerServing": "1.0",
+    "energyPerServingKj": "355",
+    "energyPer100mlKj": "592",
+    "totalStandardDrinks": "12.0"
+  }
+}

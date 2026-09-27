@@ -1,0 +1,25 @@
+{
+  "description": "Synthetic inputs: 750 mL wine at 13.5% ABV, 150 mL serving, 297 kJ per 100 mL, kJ and Cal, package word bottle, 35 mm (the print-check width). 150 x 297 / 100 = 445.5 kJ, which rounds half up to 446.",
+  "inputs": {
+    "abv": 13.5,
+    "package_ml": 750,
+    "serving_ml": 150,
+    "kj_per_100ml": 297
+  },
+  "options": {
+    "width_mm": 35,
+    "colour": "black",
+    "energy_units": "kj_cal",
+    "package_word": "bottle"
+  },
+  "expected": {
+    "servingsPerPackage": "5",
+    "servingSizeMl": "150",
+    "standardDrinksPerServing": "1.6",
+    "energyPerServingKj": "446",
+    "energyPer100mlKj": "297",
+    "energyPerServingCal": "106",
+    "energyPer100mlCal": "71",
+    "totalStandardDrinks": "8.0"
+  }
+}

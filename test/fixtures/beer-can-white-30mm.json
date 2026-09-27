@@ -1,0 +1,23 @@
+{
+  "description": "Synthetic inputs: 375 mL can of beer at 4.8% ABV served whole, 172 kJ per 100 mL, white-on-transparent, package word can, 30 mm.",
+  "inputs": {
+    "abv": 4.8,
+    "package_ml": 375,
+    "serving_ml": 375,
+    "kj_per_100ml": 172
+  },
+  "options": {
+    "width_mm": 30,
+    "colour": "white",
+    "energy_units": "kj",
+    "package_word": "can"
+  },
+  "expected": {
+    "servingsPerPackage": "1",
+    "servingSizeMl": "375",
+    "standardDrinksPerServing": "1.4",
+    "energyPerServingKj": "645",
+    "energyPer100mlKj": "172",
+    "totalStandardDrinks": "1.4"
+  }
+}
