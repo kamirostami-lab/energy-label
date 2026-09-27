@@ -1,0 +1,207 @@
+{
+  "rules_id": "fsanz-energy-statement",
+  "version": "0.1.0",
+  "title": "FSANZ energy statement for packaged alcoholic beverages",
+  "jurisdictions": ["AU", "NZ"],
+  "versions": [
+    {
+      "version": "0.1.0",
+      "date": "2026-09-27",
+      "notes": "Initial rules, transcribed from Build Brief 01 sections 2, 7 and 8. The primary sources were NOT re-read: www.foodstandards.gov.au, www.wineaustralia.com and www.legislation.gov.au were blocked by the network policy of the session-1 build environment, so every regulatory verified_at is null. The two studio rules sourced only from the brief (min_rule_weight_pt, servings_decimal_places) are verified against Build Brief 01. Search-engine excerpts retrieved on 2026-09-27 are consistent with the compliance date, the 0.5% ABV threshold, the bordered tabular format and the averages requirement, but they are not a substitute for reading the sources."
+    }
+  ],
+  "sources": {
+    "brief_01": {
+      "title": "Komms-Haus Build Brief 01: Energy Panel, 25 September 2026",
+      "publisher": "Komms-Haus",
+      "url": null,
+      "kind": "studio"
+    },
+    "fsanz_guidance_2026_02": {
+      "title": "Guidance for Energy Labelling on Alcoholic Beverages (February 2026)",
+      "publisher": "Food Standards Australia New Zealand",
+      "url": "https://www.foodstandards.gov.au/sites/default/files/2026-02/Guidance%20for%20Energy%20Labelling%20on%20Alcoholic%20Beverages.pdf",
+      "kind": "regulator_guidance",
+      "notes": "Search results also list a re-upload at .../2026-02/Guidance%20for%20Energy%20Labelling%20on%20Alcoholic%20Beverages_0.pdf and a Food Regulation copy at https://www.foodregulation.gov.au/sites/default/files/2026-02/energy-labelling-on-alcoholic-beverages-guidance-for-producers-importers-suppliers-distributors-and-retailers.pdf. Confirm which is current when verifying."
+    },
+    "fsanz_p1059": {
+      "title": "Proposal P1059: Energy labelling on alcoholic beverages",
+      "publisher": "Food Standards Australia New Zealand",
+      "url": "https://www.foodstandards.gov.au/food-standards-code/proposals/Proposal-P1059-Energy-labelling-on-alcoholic-beverages",
+      "kind": "regulator_proposal"
+    },
+    "code_amendment_241": {
+      "title": "Australia New Zealand Food Standards Code: Amendment No. 241 (New Zealand Gazette notice 2025-gs4358)",
+      "publisher": "New Zealand Gazette",
+      "url": "https://gazette.govt.nz/notice/id/2025-gs4358",
+      "kind": "legislation",
+      "notes": "The Australian registration of the same amendment is on the Federal Register of Legislation (www.legislation.gov.au); record its identifier when verifying."
+    },
+    "wine_australia_labelling_guide": {
+      "title": "Labelling requirements (guide to requirements)",
+      "publisher": "Wine Australia",
+      "url": "https://www.wineaustralia.com/labelling/guide-to-requirements",
+      "kind": "industry_guidance"
+    },
+    "wine_australia_energy_fact_sheet": {
+      "title": "Fact Sheet and FAQs: Compulsory energy labelling in Australia and New Zealand (P1059), v1.2, 6 March 2026",
+      "publisher": "Wine Australia",
+      "url": "https://www.wineaustralia.com/getmedia/51004552-5908-4089-b774-4611ed00e2d9/Fact-Sheet-and-FAQs-Energy-statements-P1059-v1-2-6-March-2026.pdf",
+      "kind": "industry_guidance"
+    },
+    "fsanz_energy_calculator": {
+      "title": "Alcohol energy content calculator",
+      "publisher": "Food Standards Australia New Zealand",
+      "url": "https://www.foodstandards.gov.au/business/labelling/alcohol-energy-content-calculator",
+      "kind": "regulator_tool"
+    }
+  },
+  "rules": {
+    "gazettal_date": {
+      "value": "2025-08-13",
+      "sources": ["fsanz_p1059", "code_amendment_241"],
+      "verified_at": null
+    },
+    "compliance_date": {
+      "value": "2028-08-13",
+      "sources": ["fsanz_p1059", "wine_australia_labelling_guide"],
+      "notes": "Three-year transition. Products packaged and labelled on or after this date must carry the statement.",
+      "verified_at": null
+    },
+    "min_abv_percent": {
+      "value": 0.5,
+      "sources": ["fsanz_guidance_2026_02"],
+      "notes": "Inclusive: beverages containing no less than 0.5% alcohol by volume are covered.",
+      "verified_at": null
+    },
+    "exemptions": {
+      "value": [
+        {
+          "code": "nip_displayed",
+          "description": "The beverage already displays a nutrition information panel."
+        },
+        {
+          "code": "small_package",
+          "description": "The package has a surface area of less than 100 cm².",
+          "max_surface_area_cm2": 100
+        },
+        {
+          "code": "not_required_to_bear_label",
+          "description": "The food is not required to bear a label."
+        }
+      ],
+      "sources": ["fsanz_guidance_2026_02"],
+      "verified_at": null
+    },
+    "title_text": {
+      "value": "ENERGY INFORMATION",
+      "sources": ["fsanz_guidance_2026_02", "wine_australia_labelling_guide"],
+      "notes": "Heading of the prescribed format, in capitals.",
+      "verified_at": null
+    },
+    "table_with_borders": {
+      "value": true,
+      "sources": ["fsanz_guidance_2026_02", "wine_australia_labelling_guide"],
+      "notes": "The prescribed format is tabular, with borders.",
+      "verified_at": null
+    },
+    "labels": {
+      "value": {
+        "servings_per_package": "Servings per {package}",
+        "serving_size": "Serving size",
+        "standard_drinks_per_serving": "Standard drinks per serving",
+        "energy": "Energy"
+      },
+      "sources": ["fsanz_guidance_2026_02"],
+      "notes": "Mandatory contents: servings per package; serving size in mL; standard drinks per serving; average energy per serving and per 100 mL. {package} is replaced by the package word. Check the exact wording against the prescribed format when verifying.",
+      "verified_at": null
+    },
+    "column_headings": {
+      "value": {
+        "per_serving": "Average quantity per serving",
+        "per_100ml": "Average quantity per 100 mL"
+      },
+      "sources": ["fsanz_guidance_2026_02", "brief_01"],
+      "notes": "The statement must indicate that quantities are averages, for example in the column headings. Wording from Build Brief 01 section 7.",
+      "verified_at": null
+    },
+    "serving_size_unit": {
+      "value": "mL",
+      "sources": ["fsanz_guidance_2026_02"],
+      "verified_at": null
+    },
+    "energy_units": {
+      "value": {
+        "required": "kJ",
+        "optional": "Cal"
+      },
+      "sources": ["fsanz_guidance_2026_02"],
+      "notes": "Energy per serving and per 100 mL in kJ, optionally also in Cal.",
+      "verified_at": null
+    },
+    "max_significant_figures": {
+      "value": 3,
+      "sources": ["fsanz_guidance_2026_02"],
+      "notes": "A ceiling: energy values are shown to no more than three significant figures.",
+      "verified_at": null
+    },
+    "standard_drinks_decimal_places": {
+      "value": 1,
+      "sources": ["fsanz_guidance_2026_02"],
+      "notes": "Standard drinks per serving are shown to one decimal place.",
+      "verified_at": null
+    },
+    "package_word": {
+      "value": {
+        "default": "package",
+        "alternatives": ["bottle", "can", "cask", "keg"],
+        "custom_allowed": true
+      },
+      "sources": ["fsanz_guidance_2026_02", "brief_01"],
+      "notes": "FSANZ guidance Note 1: \"package\" may be replaced by \"can\", \"bottle\" or another accurate word. Cask and keg come from the Build Brief 01 scope.",
+      "verified_at": null
+    },
+    "existing_duties": {
+      "value": ["total standard drinks in the package", "alcohol content"],
+      "sources": ["fsanz_guidance_2026_02"],
+      "notes": "FSANZ guidance Note 2: these must still appear elsewhere on the label. Shown to the user as a reminder, never inside the panel.",
+      "verified_at": null
+    },
+    "standard_drink_ethanol_g": {
+      "value": 10,
+      "sources": ["brief_01"],
+      "notes": "One standard drink is 10 g of ethanol (Build Brief 01 section 7). Confirm against the Code's definition of standard drink when verifying.",
+      "verified_at": null
+    },
+    "ethanol_density_g_per_ml": {
+      "value": 0.789,
+      "sources": ["brief_01"],
+      "notes": "Build Brief 01 section 7. Confirm against the Code when verifying.",
+      "verified_at": null
+    },
+    "kj_per_cal": {
+      "value": 4.184,
+      "sources": ["brief_01"],
+      "notes": "Cal = kJ / 4.184 (Build Brief 01 section 7). Confirm against the Code's conversion factor when verifying.",
+      "verified_at": null
+    },
+    "servings_decimal_places": {
+      "value": 1,
+      "sources": ["brief_01"],
+      "notes": "Servings per package are shown to one decimal place when not a whole number (Build Brief 01 section 7).",
+      "verified_at": "2026-09-27"
+    },
+    "min_rule_weight_pt": {
+      "value": 0.25,
+      "sources": ["brief_01"],
+      "notes": "Studio print-production rule (Build Brief 01 section 7): table cell borders and outer border at no less than 0.25 pt at the exported size.",
+      "verified_at": "2026-09-27"
+    },
+    "min_type_size": {
+      "value": null,
+      "sources": ["brief_01"],
+      "notes": "Build Brief 01 section 8 asks the developer to verify from the Code whether a minimum type size applies. null means no minimum is enforced. When verified, set {\"size_mm\": n, \"measure\": \"cap_height\" | \"x_height\"} to match how the Code measures size of type; exports below it are then blocked.",
+      "verified_at": null
+    }
+  }
+}

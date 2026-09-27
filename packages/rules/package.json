@@ -1,0 +1,18 @@
+{
+  "name": "@energy-panel/rules",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Loader and validators for the Energy Panel regulatory rules files.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json",
+    "test": "vitest run",
+    "rules:check": "node --experimental-strip-types scripts/check.ts"
+  },
+  "dependencies": {
+    "zod": "^4.6.5"
+  }
+}
