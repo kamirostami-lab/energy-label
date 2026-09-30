@@ -19,11 +19,17 @@ export interface StatementInputs {
   package_surface_area_cm2?: number | null;
   /** Optional flag: the label already displays a nutrition information panel. */
   nip_displayed?: boolean | null;
+  /**
+   * Whether the product is a standardised alcoholic beverage (beer, wine, cider, spirit and the
+   * others listed in the rules file). Those need the statement at any ABV, other beverages only
+   * from 0.5% ABV, so this is consulted only below that threshold.
+   */
+  standardised_beverage?: boolean | null;
 }
 
 /** black (CMYK K in PDF), white on transparent, or a single spot colour named "Panel". */
 export type ColourVariant = 'black' | 'white' | 'spot';
-/** kJ only, or kJ with Cal on a second line. */
+/** kJ only, or kJ followed by Cal in brackets. */
 export type EnergyUnits = 'kj' | 'kj_cal';
 
 export interface StatementOptions {
@@ -47,6 +53,7 @@ export type Severity = 'block' | 'warning' | 'note';
 export type FindingCode =
   | 'INPUT_INVALID'
   | 'ABV_BELOW_THRESHOLD'
+  | 'STANDARDISED_BEVERAGE_UNCONFIRMED'
   | 'KJ_MISSING'
   | 'SERVING_EXCEEDS_PACKAGE'
   | 'SERVING_SIZE_PRECISION'
@@ -99,7 +106,6 @@ export interface PanelMetrics {
   heightMm: number;
   bodySizeMm: number;
   bodySizePt: number;
-  titleSizeMm: number;
   /** Height of capitals and figures in the smallest type on the panel. */
   capHeightMm: number;
   /** Height of lower-case letters in the smallest type on the panel. */

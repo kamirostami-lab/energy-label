@@ -1,6 +1,6 @@
 import type { EnergyStatementRules } from '@energy-panel/rules';
 import { computeValues } from './compute.ts';
-import { layoutPanel, type PanelContent } from './layout.ts';
+import { energyText, layoutPanel, type EnergyCell, type PanelContent } from './layout.ts';
 import { renderSvg } from './svg.ts';
 import type {
   Finding,
@@ -21,15 +21,20 @@ export function panelContent(
   const v = rules.values;
   const d = values.display;
   const { required: kJ, optional: Cal } = v.energy_units;
-  const energy = (kj: string, cal: string | null) =>
-    cal === null ? [`${kj} ${kJ}`] : [`${kj} ${kJ}`, `(${cal} ${Cal})`];
+  const energy = (kj: string, cal: string | null): EnergyCell => ({
+    kj: `${kj} ${kJ}`,
+    cal: cal === null ? null : `(${cal} ${Cal})`,
+  });
+  const drinks = d.standardDrinksPerServing;
+  const drinksWord =
+    drinks === '1' ? v.standard_drinks_words.singular : v.standard_drinks_words.plural;
   return {
     title: v.title_text,
+    // Standard drinks follow the serving size in brackets, as the prescribed format sets out.
     info: [
       // A replacer function, so "$&" or "$1" in a custom word is never read as a pattern.
       `${v.labels.servings_per_package.replace('{package}', () => options.package_word)}: ${d.servingsPerPackage}`,
-      `${v.labels.serving_size}: ${d.servingSizeMl} ${v.serving_size_unit}`,
-      `${v.labels.standard_drinks_per_serving}: ${d.standardDrinksPerServing}`,
+      `${v.labels.serving_size}: ${d.servingSizeMl} ${v.serving_size_unit} (${drinks} ${drinksWord})`,
     ],
     headings: [v.column_headings.per_serving, v.column_headings.per_100ml],
     energyLabel: v.labels.energy,
@@ -40,12 +45,11 @@ export function panelContent(
 
 /** The whole statement as one plain-text sentence sequence, for the SVG description. */
 export function describePanel(content: PanelContent): string {
-  const cell = (lines: string[]) => lines.join(' ');
   return [
     content.title,
     ...content.info,
-    `${content.energyLabel}, ${content.headings[0]}: ${cell(content.perServing)}`,
-    `${content.energyLabel}, ${content.headings[1]}: ${cell(content.per100ml)}`,
+    `${content.energyLabel}, ${content.headings[0]}: ${energyText(content.perServing)}`,
+    `${content.energyLabel}, ${content.headings[1]}: ${energyText(content.per100ml)}`,
   ]
     .map((sentence) => `${sentence}.`)
     .join(' ');

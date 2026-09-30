@@ -1,0 +1,24 @@
+{
+  "description": "Synthetic inputs: 375 mL can of a 0.4% ABV beer, a standardised alcoholic beverage, so the statement is required below 0.5% ABV (Standard 2.7.1—2). Served whole, 75 kJ per 100 mL, 40 mm.",
+  "inputs": {
+    "abv": 0.4,
+    "package_ml": 375,
+    "serving_ml": 375,
+    "kj_per_100ml": 75,
+    "standardised_beverage": true
+  },
+  "options": {
+    "width_mm": 40,
+    "colour": "black",
+    "energy_units": "kj",
+    "package_word": "can"
+  },
+  "expected": {
+    "servingsPerPackage": "1",
+    "servingSizeMl": "375",
+    "standardDrinksPerServing": "0.1",
+    "energyPerServingKj": "281",
+    "energyPer100mlKj": "75",
+    "totalStandardDrinks": "0.1"
+  }
+}

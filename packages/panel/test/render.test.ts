@@ -4,8 +4,11 @@ import {
   PRESET_WIDTHS_MM,
   WIDTH_LIMITS_MM,
   buildStatement,
+  layoutPanel,
   panelContent,
 } from '../src/index.ts';
+import { FONT, bindPhrases } from '../src/layout.ts';
+import { measureText } from '../src/text.ts';
 import { defaultOptions, fsanzInputs, rules } from './helpers.ts';
 
 const svgOf = (width_mm: number, extra = {}) =>
@@ -102,6 +105,57 @@ describe('SVG export specification (Build Brief 01 section 8)', () => {
   });
 });
 
+describe('prescribed format (Standard 2.7.1—4B(3))', () => {
+  const layoutFor = (inputs: typeof fsanzInputs, options: Parameters<typeof buildStatement>[1]) => {
+    const result = buildStatement(inputs, options, rules);
+    return layoutPanel(
+      panelContent(result.values!, result.options!, rules),
+      options.width_mm,
+      rules.values.min_rule_weight_pt,
+    );
+  };
+
+  it('has an outer border and two full-width rules, and no rules between columns', () => {
+    const layout = layoutFor(fsanzInputs, { width_mm: 50 });
+    const r = layout.metrics.ruleWeightMm;
+    const horizontal = layout.rects.filter((rect) => rect.x === 0 && rect.width === 50);
+    const vertical = layout.rects.filter((rect) => rect.height === layout.height);
+    expect(layout.rects).toHaveLength(6);
+    expect(horizontal).toHaveLength(4); // top and bottom border, above headings, above Energy
+    expect(vertical.map((rect) => rect.x)).toEqual([0, 50 - r]);
+  });
+
+  it('centres the heading and sets everything else from the left', () => {
+    const layout = layoutFor(fsanzInputs, { width_mm: 50 });
+    const [title, ...rest] = layout.texts;
+    const width = measureText(FONT, title!.text, title!.sizeMm);
+    expect(title!.text).toBe('ENERGY INFORMATION');
+    expect(title!.x + width / 2).toBeCloseTo(25, 9);
+    expect(rest[0]!.text).toBe('Servings per package: 12');
+    expect(rest[1]!.text).toBe('Serving size: 60\u00a0mL (1\u00a0standard\u00a0drink)');
+  });
+
+  it('sets kJ (Cal) on one line when both cells fit, and Cal under kJ in both when not', () => {
+    const lines = (kj_per_100ml: number) =>
+      layoutFor({ ...fsanzInputs, kj_per_100ml }, { width_mm: 50, energy_units: 'kj_cal' })
+        .texts.map((t) => t.text)
+        .filter((text) => /kJ|Cal/.test(text));
+    expect(lines(592)).toEqual(['355\u00a0kJ (84.9\u00a0Cal)', '592\u00a0kJ (141\u00a0Cal)']);
+    expect(lines(21400)).toEqual([
+      '12800\u00a0kJ',
+      '(3070\u00a0Cal)',
+      '21400\u00a0kJ',
+      '(5110\u00a0Cal)',
+    ]);
+  });
+
+  it('never breaks a line inside brackets or between a number and its unit', () => {
+    expect(bindPhrases('Serving size: 60 mL (1 standard drink)')).toBe(
+      'Serving size: 60\u00a0mL (1\u00a0standard\u00a0drink)',
+    );
+  });
+});
+
 describe('colour variants', () => {
   it('fills black artwork with #000000', () => {
     expect(svgOf(50)).toContain('<g id="energy-panel" fill="#000000">');
@@ -123,7 +177,7 @@ describe('content', () => {
     const svg = svgOf(50, { energy_units: 'kj_cal' });
     expect(svg).toContain('<title>ENERGY INFORMATION</title>');
     expect(svg).toContain(
-      '<desc>ENERGY INFORMATION. Servings per package: 12. Serving size: 60 mL. Standard drinks per serving: 1.0. ' +
+      '<desc>ENERGY INFORMATION. Servings per package: 12. Serving size: 60 mL (1 standard drink). ' +
         'Energy, Average quantity per serving: 355 kJ (84.9 Cal). Energy, Average quantity per 100 mL: 592 kJ (141 Cal).</desc>',
     );
   });

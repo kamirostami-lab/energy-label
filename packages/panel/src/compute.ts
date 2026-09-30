@@ -46,10 +46,10 @@ export function computeValues(
         ? formatUpTo(servings, 0)
         : formatFixed(servings, v.servings_decimal_places),
       servingSizeMl: formatUpTo(inputs.serving_ml, 1),
-      standardDrinksPerServing: formatFixed(
-        standardDrinksPerServing,
-        v.standard_drinks_decimal_places,
-      ),
+      // One decimal place; whole numbers without ".0" when the rules say so ("1 standard drink").
+      standardDrinksPerServing: v.standard_drinks_trim_trailing_zero
+        ? formatUpTo(standardDrinksPerServing, v.standard_drinks_decimal_places)
+        : formatFixed(standardDrinksPerServing, v.standard_drinks_decimal_places),
       energyPerServingKj: formatSignificant(energyPerServingKj, figures),
       energyPer100mlKj: formatSignificant(energyPer100mlKj, figures),
       energyPerServingCal: sig(energyPerServingCal),

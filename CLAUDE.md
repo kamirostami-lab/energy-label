@@ -7,24 +7,35 @@ responsible for compliance, and every screen must say so.
 
 ## Status
 
-| Session | Work                                                                                        | State                   |
-| ------- | ------------------------------------------------------------------------------------------- | ----------------------- |
-| 1       | Monorepo, `rules/fsanz-energy-statement.json`, `packages/panel` SVG builder, golden fixture | Done (rules unverified) |
-| 2       | PDF export with pdf-lib, outlined text, PDF/X-4 metadata; proof sheet                       | Next                    |
-| 3       | SvelteKit generator, live preview, validation states, export bar; Pages preview             |                         |
-| 4       | D1 migrations, magic-link auth (Resend), SKU records, exports to R2                         |                         |
-| 5       | Stripe Checkout and Portal, webhooks, entitlements                                          |                         |
-| 6       | Printer profiles, subdomain routing, branding, job history                                  |                         |
-| 7       | Checklist from `rules/anz-label-elements.json`, tick record, CSV export                     |                         |
-| 8       | Accessibility pass, error copy, rate limiting, logging, production deploy                   |                         |
+| Session | Work                                                                                        | State              |
+| ------- | ------------------------------------------------------------------------------------------- | ------------------ |
+| 1       | Monorepo, `rules/fsanz-energy-statement.json`, `packages/panel` SVG builder, golden fixture | Done (rules 0.2.0) |
+| 2       | PDF export with pdf-lib, outlined text, PDF/X-4 metadata; proof sheet                       | Next               |
+| 3       | SvelteKit generator, live preview, validation states, export bar; Pages preview             |                    |
+| 4       | D1 migrations, magic-link auth (Resend), SKU records, exports to R2                         |                    |
+| 5       | Stripe Checkout and Portal, webhooks, entitlements                                          |                    |
+| 6       | Printer profiles, subdomain routing, branding, job history                                  |                    |
+| 7       | Checklist from `rules/anz-label-elements.json`, tick record, CSV export                     |                    |
+| 8       | Accessibility pass, error copy, rate limiting, logging, production deploy                   |                    |
 
-**Blocking before any customer export:** 18 of the 20 rules in `rules/fsanz-energy-statement.json`
-have `verified_at: null`. Session 1 could not open the primary sources (the build environment's
-network policy blocked `www.foodstandards.gov.au`, `www.wineaustralia.com` and
-`www.legislation.gov.au`), so the values are transcribed from Build Brief 01 section 2 and 7.
-A person must read each source, correct any value, set `verified_at`, bump `version`, and
-regenerate the fixtures. `pnpm rules:check --strict` fails until that is done; every
-`buildStatement` result carries a `RULES_UNVERIFIED` note meanwhile.
+**Rules status (0.2.0):** 21 of the 23 rules in `rules/fsanz-energy-statement.json` are verified
+against the Code amendment (Gazette FSC 181, Amendment No. 241), the FSANZ guidance of February
+2026 and the Wine Australia fact sheet v1.2. Each source records the SHA-256 of the copy read and
+each rule a locator (section, clause or page). **Blocking before any customer export:** two
+constants stay unverified because none of those sources states them: `ethanol_density_g_per_ml`
+(0.789) and `kj_per_cal` (4.184). `pnpm rules:check --strict` fails until they are verified;
+every `buildStatement` result carries a `RULES_UNVERIFIED` note meanwhile.
+
+The sources corrected Build Brief 01 in three places, now reflected in code and rules:
+
+- **Standard drinks sit in the serving-size line**, in brackets: `Serving size: 60 mL (1 standard
+drink)`. There is no separate "Standard drinks per serving" line (Standard 2.7.1—4B(3)).
+- **Standardised alcoholic beverages need the statement at any ABV**, including versions under
+  0.5% (Standard 2.7.1—2; guidance p. 1). Below 0.5% ABV the input `standardised_beverage`
+  decides: true renders, false blocks as not required, unset blocks until confirmed.
+- **Existing duties**: only the separate statement of standard drinks in the package is required
+  elsewhere, and it must not appear inside the energy statement (Standard 2.7.1—4(1A)). The
+  brief's "alcohol content" is not in these sources and was dropped from the rule.
 
 ## Layout
 
@@ -32,7 +43,7 @@ regenerate the fixtures. `pnpm rules:check --strict` fails until that is done; e
 rules/fsanz-energy-statement.json   regulatory values, each with sources and verified_at
 packages/rules/                     schema (zod), loader, verification status, rules:check CLI
 packages/panel/                     buildStatement(): compute, validate, lay out, outline, SVG
-  fonts/                            pinned IBM Plex Sans OTFs (v3.005) + OFL licence
+  fonts/                            pinned IBM Plex Sans Regular OTF (v3.005) + OFL licence
   src/font/*.generated.ts           glyph outlines and kerning (pnpm glyphs:build; never edit)
 test/fixtures/                      golden inputs (*.json) and reviewed artwork (*.svg)
 scripts/                            secrets check, rules-change guard (node:test tests beside them)
@@ -65,11 +76,17 @@ rules give byte-identical SVG.
 - **Formulas** (brief section 7) live in `src/compute.ts`; every constant comes from the rules file.
 - **Rounding** (`src/decimal.ts`) works on the decimal value, half up: 84.85 → 84.9, and a 30 L keg
   at 5% is 118.35 → 118.4 standard drinks. Energy is reduced to at most three significant figures
-  and never gains trailing zeros (70.985 → 71, not 71.0). Standard drinks always show one decimal.
-- **Layout** (`src/layout.ts`) is proportional: body type = width ÷ 22, everything else in ems,
-  rules 0.5 pt at 50 mm and never below the rules minimum (0.25 pt). Rules are filled rectangles,
-  so they scale with the artwork. Cal, when shown, sits on a second line in each energy cell.
-- **Text is outlined** from glyph data generated from the pinned OTFs; no font reaches the
+  and never gains trailing zeros (70.985 → 71, not 71.0). Standard drinks are accurate to one
+  decimal; whole numbers drop the ".0" as in the FSANZ example (`standard_drinks_trim_trailing_zero`),
+  and exactly 1 takes the singular "standard drink".
+- **Layout** (`src/layout.ts`) follows the prescribed format (Standard 2.7.1—4B(3)): a bordered
+  box, heading centred and not bold, servings and serving-size lines, a rule, the column
+  headings, a rule, the Energy row; no rule under the heading, no rules between columns. "kJ
+  (Cal)" sits on one line when both cells fit, otherwise Cal goes under kJ in both. Proportions
+  are ours: type = width ÷ 22 (larger than the FSANZ example's, for small labels), rules 0.5 pt
+  at 50 mm and never below the rules minimum (0.25 pt), drawn as filled rectangles so they scale
+  with the artwork. Lines never break inside brackets or between a number and its unit.
+- **Text is outlined** from glyph data generated from the pinned OTF; no font reaches the
   artwork. Characters outside `src/font/charset.ts` are rejected, never dropped.
 - **SVG**: 1 user unit = 1 mm, `width`/`height` in mm, viewBox equal to the panel bounds, only
   `path` elements with M/L/C/H/V/Z. Colour variants: black `#000000`, white `#FFFFFF`, spot
@@ -101,12 +118,14 @@ Defaults apply until Kami records otherwise.
 | D5  | New Zealand rules       | same rules file, `jurisdictions: ["AU","NZ"]` (applied) | session 1 |
 | D6  | Printer white-label     | subdomain only                                          | session 6 |
 
-## Open questions for verification
+## Open items
 
-- The FSANZ example's ABV is not in the brief; the golden fixture uses 21.1% (1.0 standard drink
-  per 60 mL). Replace it if the guidance states one.
-- Exact row wording ("Servings per package", "Serving size", "Standard drinks per serving",
-  "Energy"), the colon after each label, bold heading, and "kJ (Cal)" presentation follow NIP
-  convention and need checking against the prescribed format.
-- Whether the Code sets a minimum type size for the statement, and how it is measured
-  (`min_type_size` is null, so no minimum is enforced yet).
+- Verify `ethanol_density_g_per_ml` and `kj_per_cal` (for example against Schedule 11 and the
+  Code's standard drinks guidance), then set `verified_at` and move the rules to 1.0.0.
+- The FSANZ example states no ABV; the golden fixture uses 21.1% (1.0 standard drink per 60 mL).
+- Optional Code features not offered yet: expressing under 40 kJ as "LESS THAN 40 kJ"
+  (Standard 2.7.1—4C(4)) and percentage daily intake (2.7.1—4D).
+- No minimum type size applies beyond general legibility (guidance p. 6; fact sheet p. 7), so
+  `min_type_size` is null by design; the check stays in place should that change.
+- Session 3 presets: the fact sheet (p. 5) cites Department of Health serves of 100 mL
+  (standard) and 150 mL (restaurant) for wine and 60 mL for fortified wine.

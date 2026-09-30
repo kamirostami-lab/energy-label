@@ -16,12 +16,26 @@ describe('rules/fsanz-energy-statement.json', () => {
     expect(rules.jurisdictions).toEqual(['AU', 'NZ']);
   });
 
-  it('carries the section 2 and section 7 values from Build Brief 01', () => {
+  it('carries the values verified against the Code, the FSANZ guidance and Wine Australia', () => {
     const v = loadFsanzEnergyStatementRules().values;
     expect(v.gazettal_date).toBe('2025-08-13');
     expect(v.compliance_date).toBe('2028-08-13');
     expect(v.min_abv_percent).toBe(0.5);
+    expect(v.standardised_alcoholic_beverages).toContain('beer');
+    expect(v.standardised_alcoholic_beverages).toHaveLength(13);
     expect(v.title_text).toBe('ENERGY INFORMATION');
+    expect(v.labels).toEqual({
+      servings_per_package: 'Servings per {package}',
+      serving_size: 'Serving size',
+      energy: 'Energy',
+    });
+    expect(v.standard_drinks_words).toEqual({
+      singular: 'standard drink',
+      plural: 'standard drinks',
+    });
+    expect(v.standard_drinks_trim_trailing_zero).toBe(true);
+    expect(v.existing_duties).toEqual(['the approximate number of standard drinks in the package']);
+    expect(v.min_type_size).toBeNull();
     expect(v.max_significant_figures).toBe(3);
     expect(v.standard_drinks_decimal_places).toBe(1);
     expect(v.column_headings).toEqual({
@@ -42,23 +56,25 @@ describe('rules/fsanz-energy-statement.json', () => {
     expect(v.min_rule_weight_pt).toBe(0.25);
   });
 
-  it('gives every regulatory source a URL', () => {
+  it('identifies every external source by URL or by the SHA-256 of the copy read', () => {
     const { sources } = loadFsanzEnergyStatementRules().file;
     for (const [id, source] of Object.entries(sources)) {
-      if (source.kind !== 'studio') expect(source.url, id).toMatch(/^https:\/\//);
+      if (source.kind === 'studio') continue;
+      expect(source.url !== null || source.sha256 !== undefined, id).toBe(true);
+      if (source.url !== null) expect(source.url, id).toMatch(/^https:\/\//);
     }
   });
 
-  it('reports the rules that no person has verified yet', () => {
+  it('leaves unverified only the two constants no supplied source states', () => {
     const rules = loadFsanzEnergyStatementRules();
-    // Session 1 could not reach the primary sources: only the two studio rules sourced from the
-    // brief alone are verified. Every rule citing a regulatory source still awaits a person.
-    const verified = Object.keys(rules.file.rules).filter(
-      (key) => !listUnverified(rules).includes(key as never),
-    );
-    expect(verified.sort()).toEqual(['min_rule_weight_pt', 'servings_decimal_places']);
-    for (const key of listUnverified(rules)) {
-      expect(rules.file.rules[key].verified_at).toBeNull();
+    expect(listUnverified(rules)).toEqual(['ethanol_density_g_per_ml', 'kj_per_cal']);
+  });
+
+  it('records where each externally verified rule is stated', () => {
+    const { rules, sources } = loadFsanzEnergyStatementRules().file;
+    for (const [key, rule] of Object.entries(rules)) {
+      const external = rule.sources.some((id) => sources[id]?.kind !== 'studio');
+      if (rule.verified_at !== null && external) expect(rule.locator, key).toBeTruthy();
     }
   });
 });
@@ -84,7 +100,7 @@ describe('parseRules', () => {
 
   it('requires the versions log to describe the current version', () => {
     const json = clone();
-    json.version = '0.2.0';
+    json.version = '9.0.0';
     expect(() => parseRules(json)).toThrow(/versions/);
   });
 
@@ -94,12 +110,22 @@ describe('parseRules', () => {
     expect(() => parseRules(json)).toThrow(/servings_per_package/);
   });
 
-  it('accepts a verified minimum type size', () => {
+  it('accepts a minimum type size, should one ever be set', () => {
     const json = clone();
     json.rules.min_type_size.value = { size_mm: 1.2, measure: 'cap_height' };
-    json.rules.min_type_size.verified_at = '2026-09-27';
     const rules = parseRules(json);
     expect(rules.values.min_type_size).toEqual({ size_mm: 1.2, measure: 'cap_height' });
-    expect(listUnverified(rules)).not.toContain('min_type_size');
+  });
+
+  it('requires a locator on a rule verified against an external source', () => {
+    const json = clone();
+    delete json.rules.title_text.locator;
+    expect(() => parseRules(json)).toThrow(/locator/);
+  });
+
+  it('requires an external source to carry a URL or the SHA-256 of the copy read', () => {
+    const json = clone();
+    delete json.sources.code_amendment_241.sha256;
+    expect(() => parseRules(json)).toThrow(/url or the sha256/);
   });
 });

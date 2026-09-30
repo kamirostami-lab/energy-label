@@ -1,6 +1,6 @@
 // Serialises a laid-out panel as SVG artwork: 1 user unit = 1 mm, viewBox equal to the panel
 // bounds, every glyph converted to outlines. Output is byte-stable for the same layout.
-import { FACES, type PanelLayout } from './layout.ts';
+import { FONT, type PanelLayout } from './layout.ts';
 import { fmt, outlineText } from './text.ts';
 import type { ColourVariant } from './types.ts';
 
@@ -49,7 +49,7 @@ export function renderSvg(layout: PanelLayout, colour: ColourVariant, meta: SvgM
     `<g id="energy-panel" fill="${FILL[colour]}"${spot}>`,
     `<path d="${rules}"/>`,
     ...layout.texts.map(
-      (t) => `<path d="${outlineText(FACES[t.face], t.text, t.sizeMm, t.x, t.baseline)}"/>`,
+      (t) => `<path d="${outlineText(FONT, t.text, t.sizeMm, t.x, t.baseline)}"/>`,
     ),
     '</g>',
     '</svg>',

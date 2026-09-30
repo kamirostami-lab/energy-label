@@ -24,6 +24,11 @@ const sourceSchema = z
       'industry_guidance',
       'regulator_tool',
     ]),
+    /** SHA-256 of the copy a person read when verifying, so the check can be repeated. */
+    sha256: z
+      .string()
+      .regex(/^[0-9a-f]{64}$/, 'expected a lower-case hex SHA-256')
+      .optional(),
     notes: z.string().optional(),
   })
   .strict();
@@ -34,6 +39,8 @@ function entry<T extends z.ZodType>(value: T) {
     .object({
       value,
       sources: z.array(z.string().min(1)).min(1),
+      /** Where in the sources the value is stated: section, clause, page. */
+      locator: z.string().min(1).optional(),
       notes: z.string().optional(),
       verified_at: isoDate.nullable(),
     })
@@ -47,6 +54,7 @@ const rulesSchema = z
     gazettal_date: entry(isoDate),
     compliance_date: entry(isoDate),
     min_abv_percent: entry(z.number().positive()),
+    standardised_alcoholic_beverages: entry(z.array(text).min(1)),
     exemptions: entry(
       z
         .array(
@@ -67,11 +75,11 @@ const rulesSchema = z
         .object({
           servings_per_package: text.includes('{package}'),
           serving_size: text,
-          standard_drinks_per_serving: text,
           energy: text,
         })
         .strict(),
     ),
+    standard_drinks_words: entry(z.object({ singular: text, plural: text }).strict()),
     column_headings: entry(z.object({ per_serving: text, per_100ml: text }).strict()),
     serving_size_unit: entry(z.literal('mL')),
     energy_units: entry(
@@ -79,6 +87,7 @@ const rulesSchema = z
     ),
     max_significant_figures: entry(z.number().int().min(1).max(6)),
     standard_drinks_decimal_places: entry(z.number().int().min(0).max(3)),
+    standard_drinks_trim_trailing_zero: entry(z.boolean()),
     package_word: entry(
       z
         .object({
@@ -115,6 +124,15 @@ export const rulesFileSchema = z
   })
   .strict()
   .superRefine((file, ctx) => {
+    for (const [id, source] of Object.entries(file.sources)) {
+      if (source.kind !== 'studio' && source.url === null && source.sha256 === undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['sources', id],
+          message: 'an external source needs a url or the sha256 of the copy that was read',
+        });
+      }
+    }
     for (const [key, rule] of Object.entries(file.rules)) {
       for (const source of rule.sources) {
         if (!(source in file.sources)) {
@@ -124,6 +142,14 @@ export const rulesFileSchema = z
             message: `unknown source "${source}"`,
           });
         }
+      }
+      const external = rule.sources.some((id) => file.sources[id]?.kind !== 'studio');
+      if (rule.verified_at !== null && external && rule.locator === undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['rules', key, 'locator'],
+          message: 'a rule verified against an external source needs a locator (section or page)',
+        });
       }
     }
     const latest = file.versions.at(-1);
