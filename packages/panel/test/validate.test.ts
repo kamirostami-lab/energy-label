@@ -236,16 +236,17 @@ describe('minimum type size (rules file, section 8)', () => {
 });
 
 describe('rules verification note', () => {
-  it('stays on every result while rules are unverified', () => {
-    const result = buildStatement(fsanzInputs, defaultOptions, rules);
+  it('appears on every result while any rule is unverified', () => {
+    const unverified = rulesWith((json) => {
+      json.rules.kj_per_cal.verified_at = null;
+    });
+    const result = buildStatement(fsanzInputs, defaultOptions, unverified);
     expect(find(result, 'RULES_UNVERIFIED')?.severity).toBe('note');
+    expect(find(result, 'RULES_UNVERIFIED')?.message).toMatch(/1 rule not yet verified/);
     expect(result.exportable).toBe(true);
   });
 
-  it('disappears once every rule is verified', () => {
-    const verified = rulesWith((json) => {
-      for (const rule of Object.values<any>(json.rules)) rule.verified_at = '2026-09-27';
-    });
-    expect(codes(buildStatement(fsanzInputs, defaultOptions, verified))).toEqual([]);
+  it('is absent now that every rule in the shipped file is verified', () => {
+    expect(codes(buildStatement(fsanzInputs, defaultOptions, rules))).toEqual([]);
   });
 });

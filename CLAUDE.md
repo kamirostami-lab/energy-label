@@ -9,7 +9,7 @@ responsible for compliance, and every screen must say so.
 
 | Session | Work                                                                                        | State              |
 | ------- | ------------------------------------------------------------------------------------------- | ------------------ |
-| 1       | Monorepo, `rules/fsanz-energy-statement.json`, `packages/panel` SVG builder, golden fixture | Done (rules 0.2.0) |
+| 1       | Monorepo, `rules/fsanz-energy-statement.json`, `packages/panel` SVG builder, golden fixture | Done (rules 1.0.0) |
 | 2       | PDF export with pdf-lib, outlined text, PDF/X-4 metadata; proof sheet                       | Next               |
 | 3       | SvelteKit generator, live preview, validation states, export bar; Pages preview             |                    |
 | 4       | D1 migrations, magic-link auth (Resend), SKU records, exports to R2                         |                    |
@@ -18,13 +18,13 @@ responsible for compliance, and every screen must say so.
 | 7       | Checklist from `rules/anz-label-elements.json`, tick record, CSV export                     |                    |
 | 8       | Accessibility pass, error copy, rate limiting, logging, production deploy                   |                    |
 
-**Rules status (0.2.0):** 21 of the 23 rules in `rules/fsanz-energy-statement.json` are verified
-against the Code amendment (Gazette FSC 181, Amendment No. 241), the FSANZ guidance of February
-2026 and the Wine Australia fact sheet v1.2. Each source records the SHA-256 of the copy read and
-each rule a locator (section, clause or page). **Blocking before any customer export:** two
-constants stay unverified because none of those sources states them: `ethanol_density_g_per_ml`
-(0.789) and `kj_per_cal` (4.184). `pnpm rules:check --strict` fails until they are verified;
-every `buildStatement` result carries a `RULES_UNVERIFIED` note meanwhile.
+**Rules status (1.0.0): all 23 rules verified.** 21 against the Code amendment (Gazette FSC 181,
+Amendment No. 241), the FSANZ guidance of February 2026 and the Wine Australia fact sheet v1.2;
+each source records the SHA-256 of the copy read and each rule a locator (section, clause or
+page). The two formula constants no regulatory source states, `ethanol_density_g_per_ml` (0.789)
+and `kj_per_cal` (4.184), were accepted by Komms-Haus as physical constants on 30 September 2026.
+Should a rule ever lose its verification, `pnpm rules:check --strict` fails and every
+`buildStatement` result carries a `RULES_UNVERIFIED` note.
 
 The sources corrected Build Brief 01 in three places, now reflected in code and rules:
 
@@ -120,8 +120,6 @@ Defaults apply until Kami records otherwise.
 
 ## Open items
 
-- Verify `ethanol_density_g_per_ml` and `kj_per_cal` (for example against Schedule 11 and the
-  Code's standard drinks guidance), then set `verified_at` and move the rules to 1.0.0.
 - The FSANZ example states no ABV; the golden fixture uses 21.1% (1.0 standard drink per 60 mL).
 - Optional Code features not offered yet: expressing under 40 kJ as "LESS THAN 40 kJ"
   (Standard 2.7.1—4C(4)) and percentage daily intake (2.7.1—4D).

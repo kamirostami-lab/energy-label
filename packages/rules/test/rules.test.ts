@@ -65,9 +65,10 @@ describe('rules/fsanz-energy-statement.json', () => {
     }
   });
 
-  it('leaves unverified only the two constants no supplied source states', () => {
+  it('has every rule verified', () => {
     const rules = loadFsanzEnergyStatementRules();
-    expect(listUnverified(rules)).toEqual(['ethanol_density_g_per_ml', 'kj_per_cal']);
+    expect(rules.version).toBe('1.0.0');
+    expect(listUnverified(rules)).toEqual([]);
   });
 
   it('records where each externally verified rule is stated', () => {
