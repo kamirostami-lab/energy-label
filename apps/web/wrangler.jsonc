@@ -13,4 +13,37 @@
   "observability": {
     "enabled": true,
   },
+  // Accounts, SKUs and export records. Migrations: /migrations (pnpm db:migrate:local).
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "energy-panel",
+      "database_id": "00415ac6-5c0e-46c7-b9f2-ce34d8339413",
+      "migrations_dir": "../../migrations",
+    },
+  ],
+  // Exported files (SVG, PDFs, proof sheets), keyed by account and export id.
+  "r2_buckets": [
+    {
+      "binding": "EXPORTS",
+      "bucket_name": "energy-panel-exports",
+    },
+  ],
+  // Worker Previews (branch builds) use their own database and bucket, never production data.
+  "previews": {
+    "d1_databases": [
+      {
+        "binding": "DB",
+        "database_name": "energy-panel-preview",
+        "database_id": "1166ce38-9f7e-44ec-aef2-d352a9b87abc",
+        "migrations_dir": "../../migrations",
+      },
+    ],
+    "r2_buckets": [
+      {
+        "binding": "EXPORTS",
+        "bucket_name": "energy-panel-exports-preview",
+      },
+    ],
+  },
 }

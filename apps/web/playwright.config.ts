@@ -17,7 +17,9 @@ export default defineConfig({
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {
-    command: 'pnpm exec wrangler dev --port 8787 --ip 127.0.0.1',
+    // A fresh local D1 database gets the migrations; sign-in emails go to the in-memory outbox.
+    command:
+      'pnpm exec wrangler d1 migrations apply DB --local && pnpm exec wrangler dev --port 8787 --ip 127.0.0.1 --var MAIL_TRANSPORT:outbox',
     url: 'http://127.0.0.1:8787/',
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

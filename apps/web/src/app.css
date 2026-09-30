@@ -63,3 +63,113 @@ a {
   white-space: nowrap;
   border: 0;
 }
+
+/* Form parts shared by the generator and the account pages. */
+
+.field {
+  margin-bottom: 1rem;
+}
+
+.field > label,
+.label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+  padding: 0;
+}
+
+.unit,
+.optional {
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.optional::before {
+  content: '· ';
+}
+
+input[type='text'],
+input[type='email'],
+select {
+  font: inherit;
+  width: 100%;
+  max-width: 20rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--muted);
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: var(--ink);
+}
+
+input[aria-invalid='true'] {
+  border-color: var(--block);
+  box-shadow: 0 0 0 1px var(--block);
+}
+
+.hint {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin: 0.3rem 0 0;
+}
+
+.msg {
+  margin: 0.35rem 0 0;
+  padding: 0.4rem 0.6rem;
+  border-left: 4px solid;
+  border-radius: 2px;
+  font-size: 0.9375rem;
+}
+
+.msg.block {
+  border-color: var(--block);
+  background: var(--block-soft);
+}
+
+.msg.warning {
+  border-color: var(--warn);
+  background: var(--warn-soft);
+}
+
+.msg.note {
+  border-color: var(--note);
+  background: var(--note-soft);
+}
+
+.msg.ok {
+  border-color: var(--ok);
+  background: var(--soft);
+}
+
+button.primary,
+button.secondary {
+  font: inherit;
+  font-weight: 600;
+  padding: 0.6rem 1.1rem;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+button.primary {
+  border: 0;
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+button.secondary {
+  border: 1px solid var(--accent);
+  background: var(--paper);
+  color: var(--accent);
+}
+
+button.primary:disabled,
+button.secondary:disabled {
+  opacity: 0.7;
+  cursor: progress;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}

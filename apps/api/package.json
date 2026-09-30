@@ -2,7 +2,7 @@
   "name": "@energy-panel/api",
   "version": "0.1.0",
   "private": true,
-  "description": "Energy Panel HTTP API (Hono): live preview and exports. Runs inside the web app's Worker.",
+  "description": "Energy Panel HTTP API (Hono): live preview, exports, magic-link sign-in and SKU records. Runs inside the web app's Worker.",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
@@ -19,6 +19,7 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20260930.2"
+    "@cloudflare/workers-types": "^5.20260930.2",
+    "wrangler": "^4.145.0"
   }
 }
