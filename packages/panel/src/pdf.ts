@@ -3,10 +3,11 @@
 // layout's millimetres (y down) to PDF points (y up). pdf-lib supplies the document structure.
 import { PDFDocument, PDFHexString, PDFName, PDFString, type PDFContext } from 'pdf-lib';
 import { fingerprint, utf8 } from './bytes.ts';
-import { FONT, type PanelLayout, type Rect } from './layout.ts';
+import { FONT, rectCommands, type PanelLayout } from './layout.ts';
 import { SPOT_COLOUR_NAME } from './svg.ts';
 import { fmt, outlineCommands, type PathCommand } from './text.ts';
 import type { ColourVariant } from './types.ts';
+import { WATERMARK_TINT, watermarkCommands } from './watermark.ts';
 
 export const PT_PER_MM = 72 / 25.4;
 /** 72 / 25.4 to nine decimals: under 1e-7 pt of error across a 120 mm panel. */
@@ -35,6 +36,8 @@ export interface PdfMeta {
   issuedOn: string;
   /** PDF/X-4 flavour only. Without it the file follows X-4 rules but does not claim conformance. */
   outputIntent?: OutputIntent;
+  /** Sets the PREVIEW mark behind the panel (free preview exports). */
+  watermark?: boolean;
 }
 
 /** Points to four decimals. */
@@ -59,17 +62,6 @@ export function pdfPathOps(commands: readonly PathCommand[]): string {
     .join('\n');
 }
 
-/** The same corners, in the same order, as the SVG's M/H/V/H/Z rectangle. */
-function rectCommands(r: Rect): PathCommand[] {
-  return [
-    ['M', r.x, r.y],
-    ['L', r.x + r.width, r.y],
-    ['L', r.x + r.width, r.y + r.height],
-    ['L', r.x, r.y + r.height],
-    ['Z'],
-  ];
-}
-
 /** Fill operators for the whole panel in layout millimetres, path for path as in the SVG. */
 export function panelPaths(layout: PanelLayout): string {
   const paths = [
@@ -77,6 +69,11 @@ export function panelPaths(layout: PanelLayout): string {
     ...layout.texts.map((t) => outlineCommands(FONT, t.text, t.sizeMm, t.x, t.baseline)),
   ];
   return paths.map((path) => `${pdfPathOps(path)}\nf`).join('\n');
+}
+
+/** The PREVIEW mark as fill operators in layout millimetres, in a CMYK grey under the artwork. */
+export function watermarkOps(layout: PanelLayout, colour: ColourVariant): string {
+  return `0 0 0 ${num(WATERMARK_TINT[colour])} k\n${pdfPathOps(watermarkCommands(layout))}\nf`;
 }
 
 /** Sets the fill colour: CMYK black 0/0/0/100, white 0/0/0/0, or 100% of the "Panel" spot. */
@@ -272,13 +269,13 @@ export function renderPanelPdf(
     {
       widthMm: layout.width,
       heightMm: layout.height,
-      content: `${colourOps(colour)}\n${panelPaths(layout)}`,
+      content: `${meta.watermark ? `${watermarkOps(layout, colour)}\n` : ''}${colourOps(colour)}\n${panelPaths(layout)}`,
       spot: colour === 'spot',
     },
     {
       version: flavour === 'pdf14' ? '1.4' : '1.6',
       title: meta.title,
-      subject: `FSANZ energy statement, rules ${meta.rulesVersion}`,
+      subject: `FSANZ energy statement, rules ${meta.rulesVersion}${meta.watermark ? '; watermarked preview, not for print' : ''}`,
       issuedOn: meta.issuedOn,
       outputIntent: flavour === 'pdfx4' ? meta.outputIntent : undefined,
     },

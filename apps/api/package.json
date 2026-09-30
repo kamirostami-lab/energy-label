@@ -1,0 +1,24 @@
+{
+  "name": "@energy-panel/api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Energy Panel HTTP API (Hono): live preview and exports. Runs inside the web app's Worker.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./config": "./src/config.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@energy-panel/panel": "workspace:*",
+    "@energy-panel/rules": "workspace:*",
+    "hono": "^4.13.12",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260930.2"
+  }
+}

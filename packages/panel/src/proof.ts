@@ -12,7 +12,7 @@ import {
   type ExportedFile,
 } from './export.ts';
 import { FONT, wrapText, type PanelLayout } from './layout.ts';
-import { colourOps, issueDate, panelPaths, pdfPathOps, writePdf } from './pdf.ts';
+import { colourOps, issueDate, panelPaths, pdfPathOps, watermarkOps, writePdf } from './pdf.ts';
 import { fmt, measureText, outlineCommands, unsupportedCharacters } from './text.ts';
 import type { ColourVariant, StatementInputs, StatementOptions, StatementResult } from './types.ts';
 
@@ -26,6 +26,11 @@ export interface ProofDetails {
   issuedOn: string;
   /** White-label branding; the logo arrives with printer profiles in session 6. */
   printer?: { name: string; footer?: string };
+}
+
+export interface ProofOptions {
+  /** A free preview proof (decision D3): the panels carry the PREVIEW mark. */
+  watermark?: boolean;
 }
 
 /** Thrown when proof details contain text the proof typeface cannot set. */
@@ -159,7 +164,7 @@ class Sheet {
     }
   }
 
-  panel(layout: PanelLayout, colour: ColourVariant, scale: number): void {
+  panel(layout: PanelLayout, colour: ColourVariant, scale: number, watermark: boolean): void {
     const x = PAGE.margin + (colour === 'white' ? 2 : 0);
     const y = this.y + (colour === 'white' ? 2 : 0);
     if (colour === 'white') {
@@ -170,7 +175,7 @@ class Sheet {
       );
     }
     this.ops.push(
-      `q\n${fmt(scale)} 0 0 ${fmt(scale)} ${fmt(x)} ${fmt(y)} cm\n${colourOps(colour)}\n${panelPaths(layout)}\nQ`,
+      `q\n${fmt(scale)} 0 0 ${fmt(scale)} ${fmt(x)} ${fmt(y)} cm\n${watermark ? `${watermarkOps(layout, colour)}\n` : ''}${colourOps(colour)}\n${panelPaths(layout)}\nQ`,
     );
     this.y = y + layout.height * scale + (colour === 'white' ? 2 : 0);
   }
@@ -188,7 +193,9 @@ export async function buildProofSheet(
   options: StatementOptions,
   rules: EnergyStatementRules,
   details: ProofDetails,
+  proofOptions: ProofOptions = {},
 ): Promise<ExportedFile> {
+  const watermark = proofOptions.watermark === true;
   const { result, layout } = planStatement(inputs, options, rules);
   if (!result.exportable || !layout || !result.options || !result.values) {
     throw new ExportBlockedError(result.warnings.filter((w) => w.severity === 'block'));
@@ -254,10 +261,11 @@ export async function buildProofSheet(
     `${details.producer} · Issued ${longDate(details.issuedOn)} · Rules version ${rules.version}`,
     SIZE.body,
   );
+  if (watermark) sheet.lines('Watermarked preview: not for print.', SIZE.body);
 
   sheet.y += GAP;
   sheet.lines(`Actual size: ${formatUpTo(width_mm, 1)} mm wide`, SIZE.small);
-  sheet.panel(layout, colour, 1);
+  sheet.panel(layout, colour, 1, watermark);
 
   // Enlarged view at 2× where it fits, else 1.5×; a panel too big for either is large enough to read.
   const labelHeight = LEADING * SIZE.small;
@@ -269,7 +277,7 @@ export async function buildProofSheet(
   if (enlarged !== null) {
     sheet.y += GAP;
     sheet.lines(`Enlarged ${formatUpTo(enlarged, 1)}× for inspection`, SIZE.small);
-    sheet.panel(layout, colour, enlarged);
+    sheet.panel(layout, colour, enlarged, watermark);
   }
 
   sheet.y += GAP;
@@ -299,7 +307,7 @@ export async function buildProofSheet(
     },
     {
       version: '1.6',
-      title: `Energy statement proof: ${product}`,
+      title: `${watermark ? 'Energy statement proof (preview)' : 'Energy statement proof'}: ${product}`,
       subject: `FSANZ energy statement, rules ${rules.version}`,
       issuedOn: details.issuedOn,
     },
@@ -310,7 +318,7 @@ export async function buildProofSheet(
     sku: details.sku,
     widthMm: width_mm,
     ext: 'pdf',
-    suffixes: [...variantSuffixes(colour, 'pdf'), 'proof'],
+    suffixes: [...variantSuffixes(colour, 'pdf'), 'proof', ...(watermark ? ['preview'] : [])],
   });
   return { fileName, mediaType: 'application/pdf', bytes };
 }

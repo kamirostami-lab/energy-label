@@ -1,0 +1,33 @@
+{
+  "name": "@energy-panel/web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Energy Panel generator screen (SvelteKit), deployed as a Cloudflare Worker with its API.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "preview": "wrangler dev --port 8787",
+    "typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
+    "e2e": "playwright test",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "@energy-panel/api": "workspace:*",
+    "@energy-panel/panel": "workspace:*",
+    "@energy-panel/rules": "workspace:*"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
+    "@cloudflare/workers-types": "^5.20260930.2",
+    "@playwright/test": "^1.63.0",
+    "@sveltejs/adapter-cloudflare": "^7.2.9",
+    "@sveltejs/kit": "^2.70.3",
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
+    "svelte": "^5.57.1",
+    "svelte-check": "^4.7.6",
+    "typescript": "6.0.3",
+    "vite": "^8.3.1",
+    "wrangler": "^4.145.0"
+  }
+}
