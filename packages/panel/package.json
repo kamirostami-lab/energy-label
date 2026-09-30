@@ -2,10 +2,11 @@
   "name": "@energy-panel/panel",
   "version": "0.1.0",
   "private": true,
-  "description": "Pure functions that compute and render the FSANZ energy statement as outlined SVG.",
+  "description": "Pure functions that compute the FSANZ energy statement and render it as outlined SVG, PDF, proof sheets and watermarked previews.",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./settings": "./src/settings.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json",
@@ -17,9 +18,11 @@
   },
   "dependencies": {
     "@energy-panel/rules": "workspace:*",
-    "pdf-lib": "1.17.1"
+    "pdf-lib": "1.17.1",
+    "pako": "1.0.11"
   },
   "devDependencies": {
-    "opentype.js": "^2.0.0"
+    "opentype.js": "^2.0.0",
+    "@types/pako": "1.0.7"
   }
 }

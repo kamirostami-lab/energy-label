@@ -9,9 +9,12 @@
   },
   "scripts": {
     "prepare": "git config core.hooksPath .githooks || true",
+    "dev": "pnpm --filter @energy-panel/web dev",
+    "build": "pnpm --filter @energy-panel/web build",
     "check": "pnpm format:check && pnpm typecheck && pnpm test && pnpm rules:check && pnpm glyphs:check && pnpm pdf:check && pnpm secrets:check",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test && node --test scripts/*.test.mjs",
+    "e2e": "pnpm --filter @energy-panel/web e2e",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "rules:check": "pnpm --filter @energy-panel/rules rules:check",
@@ -24,6 +27,7 @@
   "devDependencies": {
     "@types/node": "^22.20.4",
     "prettier": "^3.9.9",
+    "prettier-plugin-svelte": "^3.5.2",
     "typescript": "^7.0.2",
     "vitest": "^5.0.2"
   }

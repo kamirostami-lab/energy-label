@@ -11,8 +11,8 @@ responsible for compliance, and every screen must say so.
 | ------- | ------------------------------------------------------------------------------------------- | ------------------ |
 | 1       | Monorepo, `rules/fsanz-energy-statement.json`, `packages/panel` SVG builder, golden fixture | Done (rules 1.0.0) |
 | 2       | PDF export with pdf-lib, outlined text, PDF/X-4 metadata; proof sheet                       | Done               |
-| 3       | SvelteKit generator, live preview, validation states, export bar; Pages preview             | Next               |
-| 4       | D1 migrations, magic-link auth (Resend), SKU records, exports to R2                         |                    |
+| 3       | SvelteKit generator, live preview, validation states, export bar; preview deploy            | Done (see Deploy)  |
+| 4       | D1 migrations, magic-link auth (Resend), SKU records, exports to R2                         | Next               |
 | 5       | Stripe Checkout and Portal, webhooks, entitlements                                          |                    |
 | 6       | Printer profiles, subdomain routing, branding, job history                                  |                    |
 | 7       | Checklist from `rules/anz-label-elements.json`, tick record, CSV export                     |                    |
@@ -44,19 +44,27 @@ rules/fsanz-energy-statement.json   regulatory values, each with sources and ver
 packages/rules/                     schema (zod), loader, verification status, rules:check CLI
 packages/panel/                     buildStatement(): compute, validate, lay out, outline, SVG
   src/export.ts, pdf.ts, proof.ts   artwork exports (SVG, PDF) and the A4 proof sheet
+  src/raster.ts, png.ts, preview.ts server-side preview: watermarked greyscale PNG
+  src/settings.ts                   product settings the browser may load (@energy-panel/panel/settings)
   fonts/                            pinned IBM Plex Sans Regular OTF (v3.005) + OFL licence
   src/font/*.generated.ts           glyph outlines and kerning (pnpm glyphs:build; never edit)
   scripts/check-pdfs.ts             Poppler preflight of the exports (pnpm pdf:check)
 test/fixtures/                      golden inputs (*.json) and reviewed artwork (*.svg, *.pdf)
+apps/api/                           Hono API: /api/preview, /api/export (free preview export)
+apps/web/                           SvelteKit generator; one Worker with static assets (wrangler.jsonc)
+  tests/                            Playwright: keyboard-only generate flow, axe-core
 scripts/                            secrets check, rules-change guard (node:test tests beside them)
-apps/web, apps/api, migrations/     not created yet: sessions 3 and 4
+migrations/                         not created yet: session 4
 ```
 
 ## Commands
 
 ```
 pnpm install            also points git at .githooks (pre-commit secrets check)
-pnpm check              everything CI runs, in order
+pnpm check              everything CI's check job runs, in order (the web job is pnpm build + e2e)
+pnpm dev                the generator at http://localhost:5173 (Vite; API included)
+pnpm build              build the Worker (apps/web/.svelte-kit/cloudflare)
+pnpm e2e                Playwright against the built Worker in workerd (wrangler dev on :8787)
 pnpm test               Vitest in packages, node:test for scripts
 pnpm typecheck          tsc (TypeScript 7), package source checked without Node types
 pnpm rules:check        validate the rules file; list unverified rules (--strict to fail on them)
@@ -131,6 +139,42 @@ byte.
   must read one page of the declared version whose boxes measure the panel. CI installs
   poppler-utils; locally the check skips with a notice when Poppler is missing.
 
+## How the generator works
+
+One Cloudflare Worker (decision D9) serves the prerendered generator page from static assets and
+the API under `/api`, where `apps/web/src/routes/api/[...path]/+server.ts` hands every request to
+the Hono app in `apps/api`. The page is built from the rules file at build time; the browser never
+loads the rules loader or the renderer.
+
+- **The live preview is pixels, never vector artwork** (decision D8). The page posts its inputs to
+  `POST /api/preview`, which returns the statement's values and findings (without the SVG) and a
+  greyscale PNG with the PREVIEW mark burned in, rendered at the screen's density
+  (`src/raster.ts`: exact-area anti-aliasing, non-zero winding). The image is shown at true size
+  in CSS millimetres beside a millimetre ruler, at 1×, 2× or 4×.
+- **Free tier (D3)**: `POST /api/export` returns a watermarked SVG, PDF, PDF 1.4 and proof sheet,
+  once per browser (cookie `ep_free_export`, HttpOnly). The limit is a cookie until accounts
+  (session 4) and rate limiting (session 8). Print-ready exports arrive with checkout (session 5).
+- **Validation states** come from the panel's findings: field messages appear once a field has
+  been left (or an export tried), and the Checks list shows everything that blocks, warns or notes.
+- **API hygiene**: JSON only (415 otherwise), cross-site `Origin` refused, 16 KB body limit,
+  `Cache-Control: no-store`, and logs carry the event name and export id only.
+- **CPU**: a preview costs about 6–20 ms of CPU and a free export about 140 ms, above the Workers
+  Free plan's 10 ms per request, so the account needs Workers Paid.
+
+## Deploy
+
+The Worker is `energy-panel` (`apps/web/wrangler.jsonc`). Workers Builds deploys `main` and gives
+every other branch a preview URL once the repository is connected in the Cloudflare dashboard
+(Workers & Pages → Create → Import a repository), with these settings:
+
+```
+Root directory     apps/web
+Build variables    NODE_VERSION=22  PNPM_VERSION=10.33.0  SKIP_DEPENDENCY_INSTALL=1
+Build command      cd ../.. && pnpm install --frozen-lockfile && pnpm --filter @energy-panel/web build
+Deploy command     npx wrangler deploy
+Preview command    npx wrangler preview   (the default; enable builds for non-production branches)
+```
+
 ## Conventions (brief section 11)
 
 - TypeScript throughout; Australian English in copy and comments.
@@ -159,9 +203,17 @@ Defaults apply until Kami records otherwise.
 | D5  | New Zealand rules       | same rules file, `jurisdictions: ["AU","NZ"]` (applied) | session 1 |
 | D6  | Printer white-label     | subdomain only                                          | session 6 |
 | D7  | PDF/X-4 output intent   | none: X-4 rules followed, no X-4 claim (see exports)    | session 4 |
+| D8  | Live preview            | server-rendered, watermarked PNG (Kami, 30 Sep 2026)    | session 3 |
+| D9  | Hosting                 | one Worker with static assets, not Pages (Kami, 30 Sep) | session 3 |
 
 ## Open items
 
+- Connect the repository to Workers Builds (see Deploy) for the preview URL, and move the
+  account to Workers Paid (see CPU above).
+- Beverage presets set the package word; "can" for beer and cider is a guess to confirm.
+- In the free preview export's SVG and PDFs the PREVIEW mark is a separate path, so a designer can
+  delete it; the one-per-browser limit is what protects paid exports. The live preview has no
+  such gap: it is a PNG with the mark burned in.
 - D7 needs a printing condition and a CMYK ICC profile licensed for embedding (printer profiles
   could supply their own from session 6). Once chosen, run an X-4 export through a preflight
   such as Acrobat or callas pdfToolbox; the tests only use a stand-in profile.

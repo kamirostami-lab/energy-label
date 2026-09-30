@@ -1,0 +1,16 @@
+// Energy Panel: the SvelteKit generator and its API as one Worker with static assets.
+// Built by `pnpm --filter @energy-panel/web build` (adapter-cloudflare writes .svelte-kit/cloudflare).
+// Secrets never go here: use `wrangler secret put` or the Cloudflare dashboard.
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "energy-panel",
+  "main": ".svelte-kit/cloudflare/_worker.js",
+  "compatibility_date": "2026-09-30",
+  "assets": {
+    "binding": "ASSETS",
+    "directory": ".svelte-kit/cloudflare",
+  },
+  "observability": {
+    "enabled": true,
+  },
+}

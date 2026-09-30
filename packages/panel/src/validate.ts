@@ -3,11 +3,15 @@
 import { listUnverified, type EnergyStatementRules } from '@energy-panel/rules';
 import type { ComputableInputs } from './compute.ts';
 import { decimalPlaces, formatFixed, formatUpTo, isWholeNumber } from './decimal.ts';
-import { FONT, WIDTH_LIMITS_MM, overflowingText, type PanelLayout } from './layout.ts';
+import { FONT, overflowingText, type PanelLayout } from './layout.ts';
+import {
+  COLOUR_VARIANTS,
+  ENERGY_UNITS,
+  PACKAGE_WORD_MAX_LENGTH,
+  WIDTH_LIMITS_MM,
+} from './settings.ts';
 import { unsupportedCharacters } from './text.ts';
 import type {
-  ColourVariant,
-  EnergyUnits,
   Finding,
   FindingCode,
   ResolvedOptions,
@@ -17,9 +21,8 @@ import type {
   StatementValues,
 } from './types.ts';
 
-export const COLOUR_VARIANTS: readonly ColourVariant[] = ['black', 'white', 'spot'];
-export const ENERGY_UNITS: readonly EnergyUnits[] = ['kj', 'kj_cal'];
-export const PACKAGE_WORD_MAX_LENGTH = 24;
+export { COLOUR_VARIANTS, ENERGY_UNITS, PACKAGE_WORD_MAX_LENGTH };
+
 /** Relative difference tolerated between an entered Cal value and kJ / 4.184. */
 const CAL_TOLERANCE = 0.01;
 

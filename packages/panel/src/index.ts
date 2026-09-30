@@ -23,7 +23,13 @@ export {
   type PdfFlavour,
   type PdfMeta,
 } from './pdf.ts';
-export { ProofInputError, buildProofSheet, longDate, type ProofDetails } from './proof.ts';
+export {
+  ProofInputError,
+  buildProofSheet,
+  longDate,
+  type ProofDetails,
+  type ProofOptions,
+} from './proof.ts';
 export { computeValues, standardDrinks } from './compute.ts';
 export {
   countSignificantFigures,
@@ -35,6 +41,16 @@ export {
 export { CHARSET } from './font/charset.ts';
 export { LAYOUT, PRESET_WIDTHS_MM, WIDTH_LIMITS_MM, layoutPanel } from './layout.ts';
 export { SPOT_COLOUR_NAME, renderSvg } from './svg.ts';
+export { crc32, encodeGreyPng } from './png.ts';
+export { renderPreviewPng, type PreviewImage } from './preview.ts';
+export { previewScale, rasterizePanel, type GreyImage } from './raster.ts';
+export {
+  BEVERAGE_TYPES,
+  PREVIEW_LIMITS,
+  type BeverageType,
+  type BeverageTypeId,
+} from './settings.ts';
+export { WATERMARK_TEXT, WATERMARK_TINT, watermarkCommands, watermarkHex } from './watermark.ts';
 export {
   COLOUR_VARIANTS,
   ENERGY_UNITS,

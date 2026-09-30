@@ -2,7 +2,8 @@
 // criteria): pdffonts must list no fonts, and pdfinfo must read one page of the expected PDF
 // version whose MediaBox and TrimBox measure the panel (a 35 mm panel is 99.2126 pt wide). Covers
 // both PDF flavours and the proof sheet for every golden fixture, which between them use all three
-// colour variants and a 35 mm panel. Poppler warnings count as failures.
+// colour variants and a 35 mm panel, plus the watermarked preview exports. Poppler warnings count
+// as failures.
 //   pnpm pdf:check
 // Needs poppler-utils. Without it the check is skipped with a notice, except in CI, where it fails.
 import { spawnSync } from 'node:child_process';
@@ -130,6 +131,21 @@ try {
       heightMm: 297,
       version: '1.6',
     });
+    // Free preview exports (decision D3) carry the PREVIEW mark and must pass the same checks.
+    check(
+      await exportArtwork(inputs, options, rules, { format: 'pdf', ...request, watermark: true }),
+      { ...panel, version: '1.6' },
+    );
+    check(
+      await buildProofSheet(
+        inputs,
+        options,
+        rules,
+        { producer: org, sku, issuedOn },
+        { watermark: true },
+      ),
+      { widthMm: 210, heightMm: 297, version: '1.6' },
+    );
   }
 } finally {
   rmSync(out, { recursive: true, force: true });

@@ -5,12 +5,10 @@
 // a floor (the rules file minimum).
 import { SANS_REGULAR } from './font/sans-regular.generated.ts';
 import type { FontData } from './font/types.ts';
-import { measureText } from './text.ts';
+import { measureText, type PathCommand } from './text.ts';
 import type { PanelMetrics } from './types.ts';
 
-/** Product widths from Build Brief 01 section 8. Not regulatory, so they live in code. */
-export const PRESET_WIDTHS_MM = [30, 35, 40, 45, 50, 60] as const;
-export const WIDTH_LIMITS_MM = { min: 25, max: 120 } as const;
+export { PRESET_WIDTHS_MM, WIDTH_LIMITS_MM } from './settings.ts';
 
 /** The face every word of the panel is set in (decision D4: IBM Plex Sans, outlined). */
 export const FONT: FontData = SANS_REGULAR;
@@ -73,6 +71,17 @@ export interface PanelLayout {
   rects: Rect[];
   texts: TextRun[];
   metrics: PanelMetrics;
+}
+
+/** A rectangle as path commands: the same corners, in the same order, as the SVG's M/H/V/H/Z. */
+export function rectCommands(r: Rect): PathCommand[] {
+  return [
+    ['M', r.x, r.y],
+    ['L', r.x + r.width, r.y],
+    ['L', r.x + r.width, r.y + r.height],
+    ['L', r.x, r.y + r.height],
+    ['Z'],
+  ];
 }
 
 const round3 = (value: number) => Math.round(value * 1000) / 1000;

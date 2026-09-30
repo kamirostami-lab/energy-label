@@ -1,0 +1,65 @@
+:root {
+  --font:
+    system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
+  --ink: #16181a;
+  --muted: #53585e;
+  --line: #c9ccd0;
+  --soft: #f3f4f5;
+  --paper: #ffffff;
+  --accent: #0b57a4;
+  --accent-ink: #ffffff;
+  --block: #a4231a;
+  --block-soft: #fcecea;
+  --warn: #7a4d00;
+  --warn-soft: #fdf3dd;
+  --note: #2d4d6b;
+  --note-soft: #eaf1f8;
+  --ok: #1e6b35;
+  --radius: 6px;
+  color-scheme: light;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 16px/1.5 var(--font);
+}
+
+h1,
+h2,
+h3 {
+  line-height: 1.2;
+  margin: 0 0 0.5rem;
+}
+
+a {
+  color: var(--accent);
+}
+
+:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
