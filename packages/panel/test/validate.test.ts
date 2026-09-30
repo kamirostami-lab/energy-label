@@ -6,10 +6,14 @@ const codes = (result: StatementResult) => result.warnings.map((w) => w.code);
 const find = (result: StatementResult, code: FindingCode) =>
   result.warnings.find((w) => w.code === code);
 
-// The validation states table in Build Brief 01 section 7.
+// The validation states table in Build Brief 01 section 7, corrected where the Code differs.
 describe('validation states (Build Brief 01 section 7)', () => {
-  it('ABV below 0.5: export blocked; the message says the statement is not required', () => {
-    const result = buildStatement({ ...fsanzInputs, abv: 0.4 }, defaultOptions, rules);
+  it('ABV below 0.5, not a standardised beverage: blocked; the statement is not required', () => {
+    const result = buildStatement(
+      { ...fsanzInputs, abv: 0.4, standardised_beverage: false },
+      defaultOptions,
+      rules,
+    );
     const finding = find(result, 'ABV_BELOW_THRESHOLD');
     expect(finding?.severity).toBe('block');
     expect(finding?.message).toMatch(/not required/);
@@ -18,9 +22,30 @@ describe('validation states (Build Brief 01 section 7)', () => {
     expect(result.values).not.toBeNull();
   });
 
+  it('ABV below 0.5 on a standardised beverage: the statement is required (Standard 2.7.1—2)', () => {
+    const result = buildStatement(
+      { abv: 0, package_ml: 375, serving_ml: 375, kj_per_100ml: 70, standardised_beverage: true },
+      defaultOptions,
+      rules,
+    );
+    expect(result.exportable).toBe(true);
+    expect(codes(result)).not.toContain('STANDARD_DRINKS_ROUND_TO_ZERO');
+    expect(result.svg).toContain('Serving size: 375 mL (0 standard drinks).');
+  });
+
+  it('ABV below 0.5 with the beverage type unknown: blocked until the type is confirmed', () => {
+    const result = buildStatement({ ...fsanzInputs, abv: 0.4 }, defaultOptions, rules);
+    const finding = find(result, 'STANDARDISED_BEVERAGE_UNCONFIRMED');
+    expect(finding?.severity).toBe('block');
+    expect(finding?.field).toBe('standardised_beverage');
+    expect(finding?.message).toMatch(/beer, brandy, cider/);
+    expect(codes(result)).not.toContain('ABV_BELOW_THRESHOLD');
+  });
+
   it('ABV of exactly 0.5 is covered ("no less than 0.5%")', () => {
     const result = buildStatement({ ...fsanzInputs, abv: 0.5 }, defaultOptions, rules);
     expect(codes(result)).not.toContain('ABV_BELOW_THRESHOLD');
+    expect(codes(result)).not.toContain('STANDARDISED_BEVERAGE_UNCONFIRMED');
     expect(result.exportable).toBe(true);
   });
 
@@ -31,7 +56,9 @@ describe('validation states (Build Brief 01 section 7)', () => {
       rules,
     );
     expect(find(result, 'SMALL_PACKAGE_EXEMPTION')?.severity).toBe('warning');
-    expect(find(result, 'SMALL_PACKAGE_EXEMPTION')?.message).toMatch(/may be exempt/);
+    expect(find(result, 'SMALL_PACKAGE_EXEMPTION')?.message).toMatch(
+      /does not need an energy statement/,
+    );
     expect(result.exportable).toBe(true);
     expect(result.svg).not.toBeNull();
   });
@@ -91,6 +118,7 @@ describe('input checks', () => {
     ['kj_per_100ml', { kj_per_100ml: -5 }],
     ['cal_per_100ml', { cal_per_100ml: 0 }],
     ['package_surface_area_cm2', { package_surface_area_cm2: -1 }],
+    ['standardised_beverage', { standardised_beverage: 'yes' as never }],
   ])('blocks an invalid %s', (field, change) => {
     const result = buildStatement({ ...fsanzInputs, ...change }, defaultOptions, rules);
     expect(result.warnings).toContainEqual(
@@ -129,7 +157,7 @@ describe('input checks', () => {
       defaultOptions,
       rules,
     );
-    expect(result.values?.display.standardDrinksPerServing).toBe('0.0');
+    expect(result.values?.display.standardDrinksPerServing).toBe('0');
     expect(find(result, 'STANDARD_DRINKS_ROUND_TO_ZERO')?.severity).toBe('warning');
   });
 });

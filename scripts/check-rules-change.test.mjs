@@ -11,8 +11,8 @@ const file = 'rules/fsanz-energy-statement.json';
 /** A follow-up version of the current rules file, as a PR would produce it. */
 function nextVersion(change) {
   const next = structuredClone(current);
-  next.version = '0.2.0';
-  next.versions.push({ version: '0.2.0', date: '2026-10-01', notes: 'test' });
+  next.version = '99.0.0';
+  next.versions.push({ version: '99.0.0', date: '2026-10-01', notes: 'test' });
   change?.(next);
   return next;
 }
@@ -38,7 +38,7 @@ test('a changed rule without a new verified_at fails', () => {
 
 test('any change without a version bump fails', () => {
   const after = structuredClone(current);
-  after.sources.fsanz_p1059.notes = 'moved';
+  after.sources.fsanz_energy_calculator.notes = 'moved';
   assert.match(checkRulesChange(current, after, file).join('\n'), /bump "version"/);
 });
 

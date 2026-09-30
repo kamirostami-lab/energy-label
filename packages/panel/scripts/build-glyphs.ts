@@ -16,7 +16,6 @@ interface Face {
 
 const FACES: Face[] = [
   { file: 'IBMPlexSans-Regular.otf', module: 'sans-regular', exportName: 'SANS_REGULAR' },
-  { file: 'IBMPlexSans-Bold.otf', module: 'sans-bold', exportName: 'SANS_BOLD' },
 ];
 
 const here = (path: string) => new URL(`../${path}`, import.meta.url);

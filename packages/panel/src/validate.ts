@@ -3,7 +3,7 @@
 import { listUnverified, type EnergyStatementRules } from '@energy-panel/rules';
 import type { ComputableInputs } from './compute.ts';
 import { decimalPlaces, formatFixed, formatUpTo, isWholeNumber } from './decimal.ts';
-import { FACES, WIDTH_LIMITS_MM, overflowingText, type PanelLayout } from './layout.ts';
+import { FONT, WIDTH_LIMITS_MM, overflowingText, type PanelLayout } from './layout.ts';
 import { unsupportedCharacters } from './text.ts';
 import type {
   ColourVariant,
@@ -32,6 +32,9 @@ function finding(code: FindingCode, severity: Severity, message: string, field?:
 const isNumber = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value);
 const isAbsent = (value: unknown) => value === undefined || value === null;
+/** "a, b or c" */
+const orList = (items: readonly string[]) =>
+  items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} or ${items.at(-1)}`;
 
 export interface CheckedInputs {
   findings: Finding[];
@@ -56,16 +59,33 @@ export function validateInputs(
 
   // Numbers the formulas need
   const { abv, package_ml, serving_ml, servings, kj_per_100ml, cal_per_100ml } = inputs;
+  const standardised = inputs.standardised_beverage;
+  if (!isAbsent(standardised) && typeof standardised !== 'boolean') {
+    invalid(
+      'standardised_beverage',
+      'Say whether the product is a standardised alcoholic beverage: true or false.',
+    );
+  }
+  const threshold = formatUpTo(v.min_abv_percent, 2);
   if (!isNumber(abv) || abv < 0 || abv > 100) {
     invalid('abv', 'Enter the alcohol content as a percentage between 0 and 100.');
-  } else if (abv < v.min_abv_percent) {
+  } else if (abv < v.min_abv_percent && standardised !== true) {
+    // A prescribed beverage is a standardised alcoholic beverage at any ABV, or any other
+    // beverage from the threshold up (Standard 2.7.1—2).
     findings.push(
-      finding(
-        'ABV_BELOW_THRESHOLD',
-        'block',
-        `An energy statement is not required at ${formatUpTo(abv, 2)}% ABV. It applies to beverages containing no less than ${formatUpTo(v.min_abv_percent, 2)}% alcohol by volume.`,
-        'abv',
-      ),
+      standardised === false
+        ? finding(
+            'ABV_BELOW_THRESHOLD',
+            'block',
+            `An energy statement is not required. At ${formatUpTo(abv, 2)}% ABV this is not a prescribed beverage: the statement applies from ${threshold}% ABV, and to standardised alcoholic beverages at any strength.`,
+            'abv',
+          )
+        : finding(
+            'STANDARDISED_BEVERAGE_UNCONFIRMED',
+            'block',
+            `Below ${threshold}% ABV an energy statement is required only for standardised alcoholic beverages (${orList(v.standardised_alcoholic_beverages)}), including their low- and no-alcohol versions. Say whether this product is one of them.`,
+            'standardised_beverage',
+          ),
     );
   }
   if (!isNumber(package_ml) || package_ml <= 0) {
@@ -129,7 +149,7 @@ export function validateInputs(
         finding(
           'SMALL_PACKAGE_EXEMPTION',
           'warning',
-          `Packages with a surface area under ${smallPackage.max_surface_area_cm2} cm² may be exempt from the energy statement. Check whether the exemption applies before printing.`,
+          `A beverage for sale in a small package, with a surface area under ${smallPackage.max_surface_area_cm2} cm², does not need an energy statement (Standard 2.7.1—4A). Confirm the measurement before relying on the exemption.`,
           'package_surface_area_cm2',
         ),
       );
@@ -142,7 +162,7 @@ export function validateInputs(
       finding(
         'NIP_DISPLAYED',
         'warning',
-        'An energy statement is not required where the label displays a nutrition information panel.',
+        'An energy statement is not required where the label has a nutrition information panel required by Standard 1.2.8, or a voluntary one that complies with section 2.7.1—4E, including standard drinks per serving.',
         'nip_displayed',
       ),
     );
@@ -205,7 +225,7 @@ function resolveOptions(
   const rawWord: unknown = options.package_word ?? v.package_word.default;
   const word = typeof rawWord === 'string' ? rawWord.trim().replace(/\s+/g, ' ') : '';
   const listed = word === v.package_word.default || v.package_word.alternatives.includes(word);
-  const missing = unsupportedCharacters(FACES.regular, word);
+  const missing = unsupportedCharacters(FONT, word);
   if (word === '') {
     block('PACKAGE_WORD_INVALID', 'package_word', 'Enter the word to use for the package.');
   } else if (!listed && !v.package_word.custom_allowed) {
@@ -271,7 +291,8 @@ export function validateValues(
       ),
     );
   }
-  if (Number(values.display.standardDrinksPerServing) === 0) {
+  // Below the threshold only standardised beverages get this far, and 0 is expected for them.
+  if (inputs.abv >= v.min_abv_percent && Number(values.display.standardDrinksPerServing) === 0) {
     findings.push(
       finding(
         'STANDARD_DRINKS_ROUND_TO_ZERO',

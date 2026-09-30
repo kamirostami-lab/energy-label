@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildStatement, formatFixed, standardDrinks } from '../src/index.ts';
-import { defaultOptions, fsanzInputs, rules } from './helpers.ts';
+import { defaultOptions, fsanzInputs, rules, rulesWith } from './helpers.ts';
 
 // Acceptance criterion: 20 known ABV and serving combinations match hand-calculated values to one
 // decimal place. Working: serving mL × ABV % × 0.789 g/mL ÷ 1000 (i.e. ÷ 100 for the percentage,
@@ -35,12 +35,35 @@ describe('standard drinks per serving', () => {
   });
 
   it.each(HAND_CALCULATED)('%s mL at %s%% ABV: %s → %s', (servingMl, abv, _working, expected) => {
-    const result = buildStatement(
+    const values = buildStatement(
       { abv, package_ml: servingMl * 2, serving_ml: servingMl, kj_per_100ml: 300 },
       defaultOptions,
       rules,
+    ).values!;
+    expect(formatFixed(values.standardDrinksPerServing, 1)).toBe(expected);
+    // Displayed as in the FSANZ guidance example: whole numbers without ".0".
+    expect(values.display.standardDrinksPerServing).toBe(expected.replace(/\.0$/, ''));
+  });
+
+  it('can always show one decimal place when the rules say so', () => {
+    const fixed = rulesWith((json) => {
+      json.rules.standard_drinks_trim_trailing_zero.value = false;
+    });
+    const result = buildStatement(fsanzInputs, defaultOptions, fixed);
+    expect(result.values?.display.standardDrinksPerServing).toBe('1.0');
+    expect(result.svg).toContain('Serving size: 60 mL (1.0 standard drinks).');
+  });
+});
+
+describe('serving size line', () => {
+  it('carries standard drinks in brackets, singular for exactly one', () => {
+    expect(buildStatement(fsanzInputs, defaultOptions, rules).svg).toContain(
+      'Serving size: 60 mL (1 standard drink).',
     );
-    expect(result.values?.display.standardDrinksPerServing).toBe(expected);
+    const wine = { abv: 13.5, package_ml: 750, serving_ml: 150, kj_per_100ml: 297 };
+    expect(buildStatement(wine, defaultOptions, rules).svg).toContain(
+      'Serving size: 150 mL (1.6 standard drinks).',
+    );
   });
 });
 
