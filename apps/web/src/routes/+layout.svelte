@@ -1,14 +1,53 @@
 <script lang="ts">
   import '../app.css';
+  import { onMount } from 'svelte';
+  import { goto } from '$app/navigation';
+  import { page } from '$app/state';
+  import { api } from '$lib/account';
+  import { refreshSession, session } from '$lib/session.svelte';
 
   let { children } = $props();
+
+  onMount(() => {
+    refreshSession();
+    // A sign-in link is usually opened in a new tab; coming back to this one picks it up.
+    const onVisible = () => {
+      if (document.visibilityState === 'visible' && !session.account) refreshSession();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  });
+
+  async function signOut() {
+    await api('auth/sign-out', { method: 'POST' }).catch(() => undefined);
+    session.account = null;
+    await goto('/');
+  }
+
+  const current = (path: string) => (page.url.pathname === path ? 'page' : undefined);
 </script>
 
-<a class="skip" href="#main">Skip to the generator</a>
+<a class="skip" href="#main">Skip to main content</a>
 
 <header class="site">
   <div class="wrap">
-    <p class="name">Energy Panel</p>
+    <div class="top">
+      <a class="name" href="/">Energy Panel</a>
+      <nav aria-label="Main">
+        <a href="/" aria-current={current('/')}>Generator</a>
+        {#if session.account}
+          <a href="/skus" aria-current={current('/skus')}>Your SKUs</a>
+        {/if}
+      </nav>
+      <div class="account">
+        {#if session.account}
+          <span class="email">{session.account.email}</span>
+          <button type="button" class="link" onclick={signOut}>Sign out</button>
+        {:else if session.checked}
+          <a href="/sign-in" aria-current={current('/sign-in')}>Sign in</a>
+        {/if}
+      </div>
+    </div>
     <p class="responsibility">
       Energy Panel formats the energy statement from the values you enter. You remain responsible
       for your label complying with the Australia New Zealand Food Standards Code.
@@ -52,23 +91,57 @@
     background: var(--soft);
   }
   header.site .wrap {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.25rem 1.5rem;
-    align-items: baseline;
     padding-top: 0.75rem;
     padding-bottom: 0.75rem;
   }
+  .top {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.25rem 1.5rem;
+    margin-bottom: 0.25rem;
+  }
   .name {
-    margin: 0;
     font-weight: 700;
     font-size: 1.125rem;
+    color: var(--ink);
+    text-decoration: none;
+  }
+  nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 1rem;
+  }
+  nav a[aria-current='page'] {
+    color: var(--ink);
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .account {
+    margin-left: auto;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.25rem 0.75rem;
+  }
+  .email {
+    color: var(--muted);
+    overflow-wrap: anywhere;
+  }
+  button.link {
+    font: inherit;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--accent);
+    text-decoration: underline;
+    cursor: pointer;
   }
   .responsibility {
     margin: 0;
     color: var(--muted);
     font-size: 0.9375rem;
-    flex: 1 1 28rem;
+    max-width: 60rem;
   }
   footer.site {
     border-top: 1px solid var(--line);

@@ -56,3 +56,23 @@ export const exportRequestSchema = z
 
 export type PreviewRequest = z.infer<typeof previewRequestSchema>;
 export type ExportRequestBody = z.infer<typeof exportRequestSchema>;
+
+export const skuBodySchema = z
+  .object({
+    name: z.string().max(200),
+    producer: z.string().max(200).nullish(),
+    beverageType: z.string().max(32).nullish(),
+    vintageOrBatch: z.string().max(200).nullish(),
+    inputs: inputsSchema,
+    options: optionsSchema,
+  })
+  .strict();
+
+export const accountExportSchema = z
+  .object({
+    /** The visitor's local date as YYYY-MM-DD; used when within a day of the server's. */
+    issuedOn: z.string().max(10).optional(),
+  })
+  .strict();
+
+export type SkuBody = z.infer<typeof skuBodySchema>;

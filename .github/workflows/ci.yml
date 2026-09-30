@@ -57,8 +57,9 @@ jobs:
         run: node scripts/check-rules-change.mjs "origin/${{ github.base_ref }}"
 
   web:
-    # The generator in a real browser: build the Worker, run it in workerd, drive it with
-    # Playwright (keyboard-only generate flow, axe-core).
+    # The app in a real browser: build the Worker, run it in workerd with a fresh local D1 database
+    # and the sign-in outbox, drive it with Playwright (keyboard-only generate flow, sign-in, SKUs
+    # and stored exports, axe-core).
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -78,7 +79,7 @@ jobs:
       - name: Install Chromium for Playwright
         run: pnpm --filter @energy-panel/web exec playwright install --with-deps chromium
 
-      - name: Generator flow and accessibility (Playwright, axe-core)
+      - name: Generator, accounts and accessibility (Playwright, axe-core)
         run: pnpm e2e
         env:
           WRANGLER_SEND_METRICS: 'false'

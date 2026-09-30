@@ -1,5 +1,6 @@
 // Turns the generator's form state into API requests. Kept free of Svelte so it can be tested.
 import type {
+  BeverageType,
   BeverageTypeId,
   ColourVariant,
   EnergyUnits,
@@ -90,4 +91,57 @@ export function fromBase64(base64: string): Uint8Array<ArrayBuffer> {
 /** "18.6 KB" */
 export function formatSize(bytes: number): string {
   return bytes < 1024 ? `${bytes} bytes` : `${(bytes / 1024).toFixed(1)} KB`;
+}
+
+const text = (value: number | null | undefined) =>
+  value === null || value === undefined ? '' : String(value);
+
+/** The form for a stored SKU: presets where the values match one, "custom" otherwise. */
+export function formFromSku(
+  sku: {
+    beverageType: BeverageTypeId | null;
+    inputs: StatementInputs;
+    options: StatementOptions;
+  },
+  config: {
+    beverageTypes: readonly BeverageType[];
+    presetWidthsMm: readonly number[];
+    packageWords: { default: string; alternatives: readonly string[] };
+  },
+): FormState {
+  const type =
+    config.beverageTypes.find((t) => t.id === sku.beverageType) ??
+    config.beverageTypes.find((t) => t.id === 'other') ??
+    config.beverageTypes[0]!;
+  const { inputs, options } = sku;
+  const serving = inputs.serving_ml;
+  const presetServing = typeof serving === 'number' && type.servingsMl.includes(serving);
+  const width = options.width_mm;
+  const presetWidth = typeof width === 'number' && config.presetWidthsMm.includes(width);
+  const words = [config.packageWords.default, ...config.packageWords.alternatives];
+  const word = options.package_word ?? type.packageWord;
+  return {
+    beverage: type.id,
+    abv: text(inputs.abv),
+    packageMl: text(inputs.package_ml),
+    serving: presetServing ? String(serving) : 'custom',
+    servingCustom: presetServing ? '' : text(serving),
+    servings: text(inputs.servings),
+    kj: text(inputs.kj_per_100ml),
+    cal: text(inputs.cal_per_100ml),
+    area: text(inputs.package_surface_area_cm2),
+    nip: inputs.nip_displayed === true,
+    standardised:
+      inputs.standardised_beverage === true
+        ? 'yes'
+        : inputs.standardised_beverage === false
+          ? 'no'
+          : '',
+    width: presetWidth ? String(width) : 'custom',
+    widthCustom: presetWidth ? '' : text(width),
+    colour: options.colour ?? 'black',
+    units: options.energy_units ?? 'kj',
+    packageWord: words.includes(word) ? word : 'custom',
+    packageWordCustom: words.includes(word) ? '' : word,
+  };
 }

@@ -11,6 +11,7 @@
     "prepare": "git config core.hooksPath .githooks || true",
     "dev": "pnpm --filter @energy-panel/web dev",
     "build": "pnpm --filter @energy-panel/web build",
+    "db:migrate:local": "pnpm --filter @energy-panel/web db:migrate:local",
     "check": "pnpm format:check && pnpm typecheck && pnpm test && pnpm rules:check && pnpm glyphs:check && pnpm pdf:check && pnpm secrets:check",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test && node --test scripts/*.test.mjs",
