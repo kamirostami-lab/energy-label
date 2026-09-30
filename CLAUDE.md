@@ -10,8 +10,8 @@ responsible for compliance, and every screen must say so.
 | Session | Work                                                                                        | State              |
 | ------- | ------------------------------------------------------------------------------------------- | ------------------ |
 | 1       | Monorepo, `rules/fsanz-energy-statement.json`, `packages/panel` SVG builder, golden fixture | Done (rules 1.0.0) |
-| 2       | PDF export with pdf-lib, outlined text, PDF/X-4 metadata; proof sheet                       | Next               |
-| 3       | SvelteKit generator, live preview, validation states, export bar; Pages preview             |                    |
+| 2       | PDF export with pdf-lib, outlined text, PDF/X-4 metadata; proof sheet                       | Done               |
+| 3       | SvelteKit generator, live preview, validation states, export bar; Pages preview             | Next               |
 | 4       | D1 migrations, magic-link auth (Resend), SKU records, exports to R2                         |                    |
 | 5       | Stripe Checkout and Portal, webhooks, entitlements                                          |                    |
 | 6       | Printer profiles, subdomain routing, branding, job history                                  |                    |
@@ -43,11 +43,13 @@ drink)`. There is no separate "Standard drinks per serving" line (Standard 2.7.1
 rules/fsanz-energy-statement.json   regulatory values, each with sources and verified_at
 packages/rules/                     schema (zod), loader, verification status, rules:check CLI
 packages/panel/                     buildStatement(): compute, validate, lay out, outline, SVG
+  src/export.ts, pdf.ts, proof.ts   artwork exports (SVG, PDF) and the A4 proof sheet
   fonts/                            pinned IBM Plex Sans Regular OTF (v3.005) + OFL licence
   src/font/*.generated.ts           glyph outlines and kerning (pnpm glyphs:build; never edit)
-test/fixtures/                      golden inputs (*.json) and reviewed artwork (*.svg)
+  scripts/check-pdfs.ts             Poppler preflight of the exports (pnpm pdf:check)
+test/fixtures/                      golden inputs (*.json) and reviewed artwork (*.svg, *.pdf)
 scripts/                            secrets check, rules-change guard (node:test tests beside them)
-apps/web, apps/api, migrations/     not created yet: sessions 3, 2–4 and 4
+apps/web, apps/api, migrations/     not created yet: sessions 3 and 4
 ```
 
 ## Commands
@@ -58,8 +60,9 @@ pnpm check              everything CI runs, in order
 pnpm test               Vitest in packages, node:test for scripts
 pnpm typecheck          tsc (TypeScript 7), package source checked without Node types
 pnpm rules:check        validate the rules file; list unverified rules (--strict to fail on them)
-pnpm fixtures:update    regenerate test/fixtures/*.svg; review the rendered diff before committing
+pnpm fixtures:update    regenerate test/fixtures/*.svg and *.pdf; review the renders before committing
 pnpm glyphs:build       regenerate glyph data after changing the charset or fonts
+pnpm pdf:check          pdffonts and pdfinfo over every PDF variant (needs poppler-utils)
 ```
 
 ## How the panel works
@@ -92,6 +95,42 @@ rules give byte-identical SVG.
   `path` elements with M/L/C/H/V/Z. Colour variants: black `#000000`, white `#FFFFFF`, spot
   (previews black, tagged `data-spot-colour="Panel"`; the PDF export makes the separation).
 
+## How the exports work
+
+`exportArtwork(inputs, options, rules, { format, issuedOn, org, sku, outputIntent? })` in
+`packages/panel/src/export.ts` returns `{ fileName, mediaType, bytes }`, or throws
+`ExportBlockedError` carrying the blocking findings. `buildProofSheet(inputs, options, rules,
+details)` in `src/proof.ts` does the same for the A4 proof. Both are deterministic: the same
+arguments give byte-identical files, and the golden tests compare `test/fixtures/*.pdf` byte for
+byte.
+
+- **Formats**: `svg` (the `buildStatement` SVG), `pdf` (PDF 1.6 prepared to PDF/X-4 rules) and
+  `pdf14` (PDF 1.4, for workflows that ask for EPS). The page is the panel: MediaBox, TrimBox and
+  BleedBox all equal its bounds, so a 35 mm panel is 99.2126 pt wide.
+- **No fonts, same geometry as the SVG.** `src/pdf.ts` writes the content streams itself; pdf-lib
+  only assembles the document, because its drawing API adds font resources. One matrix maps
+  layout millimetres (y down) to points (y up), so the PDF paths carry the SVG's exact numbers,
+  and the tests compare them.
+- **Colour**: black is CMYK 0/0/0/100; white is CMYK 0/0/0/0, which knocks out to the substrate
+  (a job printed with white ink needs the spot variant, mapped to the printer's white); spot is
+  100% of the Separation "Panel", whose alternate previews black.
+- **Reproducible**: every date comes from `issuedOn`, the document ID is a fingerprint of the
+  content, object streams are off, and pdf-lib's fixed `%PDF-1.7` header is patched to the
+  declared version (one byte, so no cross-reference offset moves).
+- **PDF/X-4 is claimed only with an output intent.** `GTS_PDFXVersion` and `/OutputIntents` are
+  written when the request carries an `OutputIntent` (condition identifier, description,
+  registry and the CMYK ICC profile). A PDF/X-4 file must embed its printing condition, so
+  without one (the default until D7 is decided) the file follows the X-4 rules but claims nothing.
+- **Proof sheet** (brief section 8): A4 with the panel at actual size and enlarged 2× (1.5× for
+  wide panels, none when neither fits); white panels sit on a 0.8 K backdrop. Then the values
+  table (entered, chosen and calculated), the findings as notes, rules version, issue date,
+  producer, the printer's name and footer when given, and the responsibility statement. Its text
+  is outlined like the artwork, so it needs no fonts but cannot be searched.
+- **`pnpm pdf:check`** runs Poppler over both PDF flavours and the proof of every golden fixture
+  (all three colours and a 35 mm panel among them): `pdffonts` must list no fonts, and `pdfinfo`
+  must read one page of the declared version whose boxes measure the panel. CI installs
+  poppler-utils; locally the check skips with a notice when Poppler is missing.
+
 ## Conventions (brief section 11)
 
 - TypeScript throughout; Australian English in copy and comments.
@@ -101,7 +140,9 @@ rules give byte-identical SVG.
   `verified_at` on each changed rule. CI enforces this (`scripts/check-rules-change.mjs`).
 - Secrets: Wrangler secrets and the Cloudflare dashboard only. `.dev.vars` is git-ignored and the
   pre-commit hook plus CI block secret files and key-shaped strings.
-- Generated files: `YYYYMMDD-<org>-<sku>-energy-panel-<width>mm.<ext>` (from session 2).
+- Generated files: `YYYYMMDD-<org>-<sku>-energy-panel-<width>mm.<ext>`, with org and SKU slugged
+  to lower-case ASCII (`Château Lune` → `chateau-lune`). Where the convention alone would give two
+  files one name, suffixes follow the width: `-white`, `-spot`, `-pdf14`, `-proof`.
 - Logging: no input values in logs beyond the export id.
 - Golden fixtures change only on purpose: rerun `pnpm fixtures:update`, render and compare.
 
@@ -117,9 +158,15 @@ Defaults apply until Kami records otherwise.
 | D4  | Typeface in exports     | IBM Plex Sans, outlined (applied)                       | session 1 |
 | D5  | New Zealand rules       | same rules file, `jurisdictions: ["AU","NZ"]` (applied) | session 1 |
 | D6  | Printer white-label     | subdomain only                                          | session 6 |
+| D7  | PDF/X-4 output intent   | none: X-4 rules followed, no X-4 claim (see exports)    | session 4 |
 
 ## Open items
 
+- D7 needs a printing condition and a CMYK ICC profile licensed for embedding (printer profiles
+  could supply their own from session 6). Once chosen, run an X-4 export through a preflight
+  such as Acrobat or callas pdfToolbox; the tests only use a stand-in profile.
+- Print a 35 mm panel at 100% and measure it: 35 mm ± 0.2 mm (brief acceptance). The file side
+  is checked by `pnpm pdf:check`; the printer side needs paper.
 - The FSANZ example states no ABV; the golden fixture uses 21.1% (1.0 standard drink per 60 mL).
 - Optional Code features not offered yet: expressing under 40 kJ as "LESS THAN 40 kJ"
   (Standard 2.7.1—4C(4)) and percentage daily intake (2.7.1—4D).

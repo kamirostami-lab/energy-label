@@ -28,6 +28,9 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Install Poppler (pdffonts, pdfinfo)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends poppler-utils
+
       - name: Format
         run: pnpm format:check
 
@@ -42,6 +45,9 @@ jobs:
 
       - name: Glyph data matches the pinned fonts
         run: pnpm glyphs:check
+
+      - name: Exported PDFs have no fonts and measure the panel (Poppler)
+        run: pnpm pdf:check
 
       - name: No secrets in tracked files
         run: pnpm secrets:check

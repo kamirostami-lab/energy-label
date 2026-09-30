@@ -1,4 +1,29 @@
-export { buildStatement, describePanel, panelContent } from './build-statement.ts';
+export {
+  buildStatement,
+  describePanel,
+  panelContent,
+  planStatement,
+  type StatementPlan,
+} from './build-statement.ts';
+export {
+  ExportBlockedError,
+  exportArtwork,
+  exportFileName,
+  slug,
+  variantSuffixes,
+  type ArtworkFormat,
+  type ExportRequest,
+  type ExportedFile,
+  type FileNameParts,
+} from './export.ts';
+export {
+  PT_PER_MM,
+  renderPanelPdf,
+  type OutputIntent,
+  type PdfFlavour,
+  type PdfMeta,
+} from './pdf.ts';
+export { ProofInputError, buildProofSheet, longDate, type ProofDetails } from './proof.ts';
 export { computeValues, standardDrinks } from './compute.ts';
 export {
   countSignificantFigures,

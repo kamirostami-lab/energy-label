@@ -1,6 +1,12 @@
 import type { EnergyStatementRules } from '@energy-panel/rules';
 import { computeValues } from './compute.ts';
-import { energyText, layoutPanel, type EnergyCell, type PanelContent } from './layout.ts';
+import {
+  energyText,
+  layoutPanel,
+  type EnergyCell,
+  type PanelContent,
+  type PanelLayout,
+} from './layout.ts';
 import { renderSvg } from './svg.ts';
 import type {
   Finding,
@@ -55,17 +61,20 @@ export function describePanel(content: PanelContent): string {
     .join(' ');
 }
 
-/**
- * Turns a producer's values into the prescribed FSANZ energy statement as outlined SVG artwork.
- * Pure and deterministic: the same inputs, options and rules always give byte-identical SVG.
- * `svg` is null whenever a finding blocks export; `values` and `metrics` are still returned when
- * the inputs could be computed, so a preview can explain what is wrong.
- */
-export function buildStatement(
+/** A built statement plus the laid-out panel the exporters draw from. */
+export interface StatementPlan {
+  result: StatementResult;
+  /** Null when the inputs or options could not be computed. */
+  layout: PanelLayout | null;
+  content: PanelContent | null;
+}
+
+/** buildStatement, keeping the layout and content for the PDF and proof exporters. */
+export function planStatement(
   inputs: StatementInputs,
   options: StatementOptions,
   rules: EnergyStatementRules,
-): StatementResult {
+): StatementPlan {
   const checked = validateInputs(inputs, options, rules);
   const warnings: Finding[] = [...checked.findings];
   const result = (partial: Partial<StatementResult>): StatementResult => {
@@ -83,7 +92,8 @@ export function buildStatement(
     };
   };
 
-  if (!checked.inputs || !checked.options) return result({});
+  if (!checked.inputs || !checked.options)
+    return { result: result({}), layout: null, content: null };
 
   const values = computeValues(checked.inputs, checked.options, rules);
   warnings.push(...validateValues(checked.inputs, values, rules));
@@ -99,5 +109,19 @@ export function buildStatement(
         description: describePanel(content),
         rulesVersion: rules.version,
       });
-  return result({ svg, values, metrics: layout.metrics });
+  return { result: result({ svg, values, metrics: layout.metrics }), layout, content };
+}
+
+/**
+ * Turns a producer's values into the prescribed FSANZ energy statement as outlined SVG artwork.
+ * Pure and deterministic: the same inputs, options and rules always give byte-identical SVG.
+ * `svg` is null whenever a finding blocks export; `values` and `metrics` are still returned when
+ * the inputs could be computed, so a preview can explain what is wrong.
+ */
+export function buildStatement(
+  inputs: StatementInputs,
+  options: StatementOptions,
+  rules: EnergyStatementRules,
+): StatementResult {
+  return planStatement(inputs, options, rules).result;
 }
