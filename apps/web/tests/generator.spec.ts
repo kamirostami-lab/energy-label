@@ -15,9 +15,27 @@ async function tabTo(page: Page, selector: string, max = 80) {
 const preview = (page: Page) => page.locator('figure.stage img');
 const status = (page: Page) => page.getByRole('status');
 
+/**
+ * Opens the generator and waits until it is live: the status leaves "Checking…" only after
+ * hydration and the first preview response, so nothing typed can race the page starting up.
+ */
+async function open(page: Page) {
+  await page.goto('/');
+  await expect(status(page)).not.toHaveText('Checking…');
+}
+
+// E2E_CPU_THROTTLE=4 slows the browser's CPU fourfold, to shake out timing races locally.
+test.beforeEach(async ({ page }) => {
+  const rate = Number(process.env.E2E_CPU_THROTTLE ?? 1);
+  if (rate > 1) {
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Emulation.setCPUThrottlingRate', { rate });
+  }
+});
+
 /** The FSANZ guidance example (12 servings of 60 mL, 592 kJ per 100 mL), by keyboard. */
 async function enterFsanzExample(page: Page) {
-  await page.goto('/');
+  await open(page);
   await tabTo(page, 'input[name="beverage"]:checked');
   await page.keyboard.press('ArrowRight'); // Wine → Fortified wine: 60 mL serving, "bottle"
   await tabTo(page, '#abv');
@@ -70,7 +88,7 @@ test('completes the generate flow with the keyboard only', async ({ page }) => {
 });
 
 test('blocks export below 0.5% ABV until the beverage type is confirmed', async ({ page }) => {
-  await page.goto('/');
+  await open(page);
   await page.getByRole('radio', { name: 'Beer' }).check();
   await page.getByLabel('Alcohol by volume').fill('0.4');
   await page.getByLabel('Package volume').fill('375');
@@ -86,7 +104,7 @@ test('blocks export below 0.5% ABV until the beverage type is confirmed', async 
 test('shows field messages once a field has been left, and warnings do not block', async ({
   page,
 }) => {
-  await page.goto('/');
+  await open(page);
   const abv = page.getByLabel('Alcohol by volume');
   await expect(abv).not.toHaveAttribute('aria-invalid', 'true');
   await abv.fill('abc');
@@ -114,8 +132,32 @@ test('allows one free preview export per browser', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Export free preview files' })).toHaveCount(0);
 });
 
+test('keeps values typed before the page has loaded, with their messages', async ({ page }) => {
+  // Hold the page's scripts until the fields have been filled and left, as on a slow connection.
+  let release!: () => void;
+  const scripts = new Promise<void>((resolve) => (release = resolve));
+  await page.route('**/_app/immutable/**', async (route) => {
+    await scripts;
+    await route.continue();
+  });
+  await page.goto('/', { waitUntil: 'commit' });
+  const abv = page.getByLabel('Alcohol by volume');
+  await abv.fill('abc');
+  await abv.blur();
+  await page.getByLabel('Package volume').fill('750');
+  release();
+
+  await expect(status(page)).not.toHaveText('Checking…');
+  await expect(abv).toHaveValue('abc');
+  await expect(abv).toHaveAttribute('aria-invalid', 'true');
+  await abv.fill('13.5');
+  await page.getByLabel('Average energy kJ per 100 mL').fill('316');
+  await expect(status(page)).toHaveText('Ready to export.');
+  await expect(preview(page)).toHaveAttribute('alt', /Servings per bottle: 7\.5\./);
+});
+
 test('exports the values on screen even when clicked straight after typing', async ({ page }) => {
-  await page.goto('/');
+  await open(page);
   await page.getByLabel('Producer').fill('Komms-Haus');
   await page.getByLabel('Product', { exact: true }).fill('Quick');
   await page.getByLabel('Alcohol by volume').fill('13.5');
@@ -127,7 +169,7 @@ test('exports the values on screen even when clicked straight after typing', asy
 });
 
 test('refuses a blocked statement at export and points to the checks', async ({ page }) => {
-  await page.goto('/');
+  await open(page);
   await page.getByLabel('Producer').fill('Komms-Haus');
   await page.getByLabel('Product', { exact: true }).fill('Blocked');
   await page.getByLabel('Alcohol by volume').fill('13.5');
@@ -148,8 +190,7 @@ test('asks for the producer and product before exporting', async ({ page }) => {
 });
 
 test('has no serious or critical accessibility violations', async ({ page }) => {
-  await page.goto('/');
-  await expect(status(page)).not.toHaveText('Checking…');
+  await open(page);
   const check = async () => {
     const results = await new AxeBuilder({ page }).analyze();
     const serious = results.violations.filter(

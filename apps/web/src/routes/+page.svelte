@@ -112,6 +112,22 @@
 
   onMount(() => {
     dpr = Math.min(Math.max(window.devicePixelRatio || 1, 1), 3);
+    // Values typed before the page finished loading survive hydration, but the blur that left
+    // the field happened before any handler existed: count those fields as already entered.
+    const entered: Array<[Field, string]> = [
+      ['abv', form.abv],
+      ['package_ml', form.packageMl],
+      ['serving_ml', form.servingCustom],
+      ['servings', form.servings],
+      ['kj_per_100ml', form.kj],
+      ['cal_per_100ml', form.cal],
+      ['package_surface_area_cm2', form.area],
+      ['width_mm', form.widthCustom],
+      ['package_word', form.packageWordCustom],
+      ['producer', producer],
+      ['sku', sku],
+    ];
+    for (const [field, value] of entered) if (value.trim() !== '') touched[field] = true;
   });
 
   // Live preview: debounced, and each request cancels the one before it.
