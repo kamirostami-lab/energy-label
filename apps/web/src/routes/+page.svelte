@@ -182,12 +182,8 @@
       document.getElementById(nameProblems[0]!.field)?.focus();
       return;
     }
-    if (!statement?.exportable) {
-      exportError = 'Fix the items listed under Checks before exporting.';
-      await tick();
-      checksHeading?.focus();
-      return;
-    }
+    // No check against the last preview here: it can lag the inputs by a request. The server
+    // validates the values sent and refuses a blocked statement without using the free export.
     exporting = true;
     try {
       const res = await fetch('/api/export', {
@@ -205,6 +201,12 @@
       });
       const result = await res.json();
       if (!res.ok) {
+        if (result.error === 'blocked') {
+          exportError = 'Resolve the items listed under Checks before exporting.';
+          await tick();
+          checksHeading?.focus();
+          return;
+        }
         exportError = result.message ?? 'The export failed. Try again.';
         if (result.error === 'free_export_used') freeExportAvailable = false;
         return;

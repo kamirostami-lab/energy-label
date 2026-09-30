@@ -114,6 +114,32 @@ test('allows one free preview export per browser', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Export free preview files' })).toHaveCount(0);
 });
 
+test('exports the values on screen even when clicked straight after typing', async ({ page }) => {
+  await page.goto('/');
+  await page.getByLabel('Producer').fill('Komms-Haus');
+  await page.getByLabel('Product', { exact: true }).fill('Quick');
+  await page.getByLabel('Alcohol by volume').fill('13.5');
+  await page.getByLabel('Package volume').fill('750');
+  // The last value goes in and the button is pressed before the preview has caught up.
+  await page.getByLabel('Average energy kJ per 100 mL').fill('316');
+  await page.getByRole('button', { name: 'Export free preview files' }).click();
+  await expect(page.locator('ul.files a')).toHaveCount(4);
+});
+
+test('refuses a blocked statement at export and points to the checks', async ({ page }) => {
+  await page.goto('/');
+  await page.getByLabel('Producer').fill('Komms-Haus');
+  await page.getByLabel('Product', { exact: true }).fill('Blocked');
+  await page.getByLabel('Alcohol by volume').fill('13.5');
+  await page.getByLabel('Package volume').fill('750');
+  await page.getByRole('button', { name: 'Export free preview files' }).click();
+  await expect(page.getByRole('alert')).toHaveText(
+    'Resolve the items listed under Checks before exporting.',
+  );
+  await expect(page.getByRole('heading', { name: 'Checks' })).toBeFocused();
+  await expect(page.getByRole('button', { name: 'Export free preview files' })).toBeVisible();
+});
+
 test('asks for the producer and product before exporting', async ({ page }) => {
   await enterFsanzExample(page);
   await page.getByRole('button', { name: 'Export free preview files' }).click();
