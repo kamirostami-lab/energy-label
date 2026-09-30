@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- Energy Panel artwork. Text is outlined: no fonts required. 1 user unit = 1 mm. -->
-<svg xmlns="http://www.w3.org/2000/svg" width="35mm" height="13.373mm" viewBox="0 0 35 13.373" role="img" data-rules-version="0.2.0">
+<svg xmlns="http://www.w3.org/2000/svg" width="35mm" height="13.373mm" viewBox="0 0 35 13.373" role="img" data-rules-version="1.0.0">
 <title>ENERGY INFORMATION</title>
 <desc>ENERGY INFORMATION. Servings per bottle: 5. Serving size: 150 mL (1.6 standard drinks). Energy, Average quantity per serving: 446 kJ (106 Cal). Energy, Average quantity per 100 mL: 297 kJ (71 Cal).</desc>
 <g id="energy-panel" fill="#000000">

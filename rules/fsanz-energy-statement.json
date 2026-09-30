@@ -1,6 +1,6 @@
 {
   "rules_id": "fsanz-energy-statement",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "title": "FSANZ energy statement for packaged alcoholic beverages",
   "jurisdictions": ["AU", "NZ"],
   "versions": [
@@ -13,6 +13,11 @@
       "version": "0.2.0",
       "date": "2026-09-30",
       "notes": "Verified against the Code amendment (Gazette No. FSC 181, Amendment No. 241), the FSANZ guidance of February 2026 and the Wine Australia fact sheet v1.2, all supplied by Komms-Haus; each source records the SHA-256 of the copy read. Changes: standard drinks move into the serving-size line, as the prescribed format sets out ('Serving size: 60 mL (1 standard drink)'), so the standard_drinks_per_serving label is removed and standard_drinks_words added; standard_drinks_trim_trailing_zero follows the guidance example; standardised_alcoholic_beverages added, because they need the statement at any ABV; exemptions reworded to the Code; existing_duties no longer lists alcohol content, which none of the sources mentions; min_type_size confirmed as none. Still unverified: ethanol_density_g_per_ml and kj_per_cal, which none of the three sources states."
+    },
+    {
+      "version": "1.0.0",
+      "date": "2026-09-30",
+      "notes": "Komms-Haus accepted ethanol_density_g_per_ml (0.789 g/mL, ethanol at 20 °C) and kj_per_cal (4.184 kJ per kilocalorie) as physical constants on 30 September 2026. Neither is stated in the Code amendment, the FSANZ guidance or the Wine Australia fact sheet. Every rule is now verified."
     }
   ],
   "sources": {
@@ -21,6 +26,13 @@
       "publisher": "Komms-Haus",
       "url": null,
       "kind": "studio"
+    },
+    "komms_haus_decision_2026_09_30": {
+      "title": "Komms-Haus decision, 30 September 2026: accept the ethanol density and the kJ-to-Cal factor as physical constants",
+      "publisher": "Komms-Haus",
+      "url": null,
+      "kind": "studio",
+      "notes": "Recorded in the Claude Code build session of 30 September 2026 at Kami Rostami's instruction."
     },
     "code_amendment_241": {
       "title": "Commonwealth of Australia Gazette No. FSC 181, 13 August 2025: Food Standards Code Amendment No. 241, including the Food Standards (Proposal P1059 – Energy labelling on alcoholic beverages) Variation",
@@ -244,15 +256,15 @@
     },
     "ethanol_density_g_per_ml": {
       "value": 0.789,
-      "sources": ["brief_01"],
-      "notes": "Build Brief 01 section 7. Confirm against the Code when verifying.",
-      "verified_at": null
+      "sources": ["brief_01", "komms_haus_decision_2026_09_30"],
+      "notes": "Density of ethanol at 20 °C, the temperature at which the Code measures standard drinks (see standard_drink_ethanol_g). Accepted by Komms-Haus as a physical constant; none of the regulatory sources on file states it.",
+      "verified_at": "2026-09-30"
     },
     "kj_per_cal": {
       "value": 4.184,
-      "sources": ["brief_01"],
-      "notes": "Cal = kJ / 4.184 (Build Brief 01 section 7). Confirm against the Code's conversion factor when verifying.",
-      "verified_at": null
+      "sources": ["brief_01", "komms_haus_decision_2026_09_30"],
+      "notes": "Cal = kJ / 4.184: one kilocalorie is 4.184 kJ. Accepted by Komms-Haus as a physical constant; none of the regulatory sources on file states it.",
+      "verified_at": "2026-09-30"
     },
     "servings_decimal_places": {
       "value": 1,

@@ -64,7 +64,54 @@ export function fmt(value: number): string {
   return text === '-0' ? '0' : text;
 }
 
-/** Path data for `text` set at `sizeMm` with its left edge at `x` and baseline at `baseline`. */
+/** An absolute path command in mm, y axis down: the shared geometry of the SVG and PDF exports. */
+export type PathCommand =
+  | readonly ['M' | 'L', number, number]
+  | readonly ['C', number, number, number, number, number, number]
+  | readonly ['Z'];
+
+/** Outline of `text` set at `sizeMm` with its left edge at `x` and baseline at `baseline`. */
+export function outlineCommands(
+  font: FontData,
+  text: string,
+  sizeMm: number,
+  x: number,
+  baseline: number,
+): PathCommand[] {
+  const scale = sizeMm / font.unitsPerEm;
+  const chars = [...text];
+  const out: PathCommand[] = [];
+  let pen = 0;
+  chars.forEach((char, i) => {
+    const g = requireGlyph(font, char);
+    const px = (u: number) => x + (pen + u) * scale;
+    const py = (u: number) => baseline - u * scale;
+    for (const c of g.commands) {
+      if (c[0] === 'Z') out.push(['Z']);
+      else if (c[0] === 'C')
+        out.push(['C', px(c[1]), py(c[2]), px(c[3]), py(c[4]), px(c[5]), py(c[6])]);
+      else out.push([c[0], px(c[1]), py(c[2])]);
+    }
+    pen += g.advance;
+    const next = chars[i + 1];
+    if (next !== undefined) pen += font.kerning[char + next] ?? 0;
+  });
+  return out;
+}
+
+/** SVG path data for outline commands, numbers formatted by `fmt`. */
+export function svgPathData(commands: readonly PathCommand[]): string {
+  let d = '';
+  for (const c of commands) {
+    if (c[0] === 'Z') d += 'Z';
+    else if (c[0] === 'C')
+      d += `C${fmt(c[1])} ${fmt(c[2])} ${fmt(c[3])} ${fmt(c[4])} ${fmt(c[5])} ${fmt(c[6])}`;
+    else d += `${c[0]}${fmt(c[1])} ${fmt(c[2])}`;
+  }
+  return d;
+}
+
+/** SVG path data for `text` set at `sizeMm` with its left edge at `x` and baseline at `baseline`. */
 export function outlineText(
   font: FontData,
   text: string,
@@ -72,25 +119,7 @@ export function outlineText(
   x: number,
   baseline: number,
 ): string {
-  const scale = sizeMm / font.unitsPerEm;
-  const chars = [...text];
-  let pen = 0;
-  let d = '';
-  chars.forEach((char, i) => {
-    const g = requireGlyph(font, char);
-    const px = (u: number) => fmt(x + (pen + u) * scale);
-    const py = (u: number) => fmt(baseline - u * scale);
-    for (const c of g.commands) {
-      if (c[0] === 'Z') d += 'Z';
-      else if (c[0] === 'C')
-        d += `C${px(c[1])} ${py(c[2])} ${px(c[3])} ${py(c[4])} ${px(c[5])} ${py(c[6])}`;
-      else d += `${c[0]}${px(c[1])} ${py(c[2])}`;
-    }
-    pen += g.advance;
-    const next = chars[i + 1];
-    if (next !== undefined) pen += font.kerning[char + next] ?? 0;
-  });
-  return d;
+  return svgPathData(outlineCommands(font, text, sizeMm, x, baseline));
 }
 
 function requireGlyph(font: FontData, char: string): Glyph {

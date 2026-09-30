@@ -19,5 +19,10 @@
     "energyPerServingKj": "355",
     "energyPer100mlKj": "592",
     "totalStandardDrinks": "12.0"
+  },
+  "export": {
+    "issuedOn": "2026-09-30",
+    "org": "Komms-Haus",
+    "sku": "FSANZ guidance example"
   }
 }
