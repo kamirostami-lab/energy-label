@@ -183,10 +183,9 @@
         {/if}
       </form>
       <p class="hint">
-        {session.account.freeExportAvailable
-          ? 'This account has one free watermarked preview export.'
-          : 'This account has used its free watermarked preview export.'}
-        Print-ready exports open when checkout is available.
+        Print-ready exports, single or on a plan, and invoices: <a href="/billing"
+          >Plans and billing</a
+        >.
       </p>
     </section>
   {/if}

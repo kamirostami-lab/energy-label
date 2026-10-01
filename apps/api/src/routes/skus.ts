@@ -7,11 +7,17 @@
 //   PUT  /api/skus/:id               update it
 //   POST /api/skus/:id/exports       export it: files to R2, a record with the output hash
 //   GET  /api/exports/:id/files/:kind  download one file (svg, pdf, pdf14, proof)
-// Until checkout (session 5) an account has one free watermarked export (decision D3).
+// An export is a watermarked preview (one free per account, decision D3) or print-ready, paid
+// for by the account's plan or by one bought export (session 5).
 import { planStatement, slug, ExportBlockedError } from '@energy-panel/panel';
 import type { StatementInputs, StatementOptions } from '@energy-panel/panel';
 import { BEVERAGE_TYPES } from '@energy-panel/panel/settings';
 import type { Hono } from 'hono';
+import {
+  subscriptionExporting,
+  subscriptionLapsed,
+  syncSubscription,
+} from '../billing/entitlements.ts';
 import { currentAccount, type AppContext, type AppEnv, type Deps } from '../context.ts';
 import { sha256Hex } from '../crypto.ts';
 import {
@@ -24,6 +30,8 @@ import {
 import { noStore, problem, readBody, resolveIssueDate } from '../http.ts';
 import { accountExportSchema, skuBodySchema, type SkuBody } from '../schema.ts';
 import {
+  accountById,
+  addExportCredit,
   claimFreeExport,
   exportById,
   exportsForAccount,
@@ -35,11 +43,13 @@ import {
   skuById,
   skusForAccount,
   updateSku,
+  useExportCredit,
   type AccountRow,
   type ExportRow,
   type SkuRow,
   type SkuValues,
 } from '../store.ts';
+import { stripeFor } from './billing.ts';
 import { exportProblem, nameProblem } from './statement.ts';
 
 const VINTAGE_MAX_LENGTH = 40;
@@ -90,6 +100,7 @@ function exportJson(row: ExportRow) {
     issuedOn: row.issued_on,
     rulesVersion: row.rules_version,
     watermarked: row.watermarked === 1,
+    entitlement: row.entitlement,
     outputHash: row.output_hash,
     files: FILE_KINDS.map((kind) => ({
       kind,
@@ -152,6 +163,23 @@ export function registerSkuRoutes(app: Hono<AppEnv>, deps: Deps) {
   const { rules } = deps;
   const at = () => deps.now().toISOString();
   let rulesSha: Promise<string> | undefined;
+
+  /** The account after asking Stripe about its subscription; unchanged when Stripe cannot say. */
+  async function refreshSubscription(c: AppContext, account: AccountRow): Promise<AccountRow> {
+    const stripe = stripeFor(c, deps);
+    const db = c.env?.DB;
+    if (!stripe || !db || !account.subscription_id) return account;
+    try {
+      await syncSubscription(await stripe.retrieveSubscription(account.subscription_id), {
+        db,
+        log: deps.log,
+      });
+      return (await accountById(db, account.id)) ?? account;
+    } catch (error) {
+      deps.log({ event: 'subscription_refresh_failed', name: (error as Error).name });
+      return account;
+    }
+  }
 
   /** The signed-in account and database, or the problem to answer with. */
   async function signedIn(c: AppContext) {
@@ -269,6 +297,7 @@ export function registerSkuRoutes(app: Hono<AppEnv>, deps: Deps) {
         'created_at',
         'rules_version',
         'watermarked',
+        'entitlement',
         'producer',
         'product',
         'vintage_or_batch',
@@ -298,6 +327,7 @@ export function registerSkuRoutes(app: Hono<AppEnv>, deps: Deps) {
           created_at: row.created_at,
           rules_version: row.rules_version,
           watermarked: row.watermarked === 1,
+          entitlement: row.entitlement,
           producer: details.producer,
           product: details.sku,
           vintage_or_batch: details.vintageOrBatch,
@@ -384,14 +414,41 @@ export function registerSkuRoutes(app: Hono<AppEnv>, deps: Deps) {
         message: 'File storage is not set up yet.',
       });
     }
-    if (!(await claimFreeExport(s.db, s.account.id, at()))) {
-      return problem(c, {
-        status: 403,
-        error: 'free_export_used',
-        message:
-          'This account has used its free preview export. Paid exports open when checkout is available.',
-      });
+    // What pays for it: the free preview (D3), the account's plan, or one bought export.
+    const edition = read.body.edition ?? 'preview';
+    let entitlement: ExportRow['entitlement'];
+    if (edition === 'preview') {
+      if (!(await claimFreeExport(s.db, s.account.id, at()))) {
+        return problem(c, {
+          status: 403,
+          error: 'free_export_used',
+          message:
+            'This account has used its free preview export. Buy an export or a plan for print-ready files.',
+        });
+      }
+      entitlement = 'free';
+    } else {
+      let account = s.account;
+      // A plan whose period ran out without news from Stripe: ask Stripe before refusing.
+      if (subscriptionLapsed(account, deps.now())) account = await refreshSubscription(c, account);
+      if (subscriptionExporting(account, deps.now())) {
+        entitlement = 'subscription';
+      } else if (await useExportCredit(s.db, account.id)) {
+        entitlement = 'credit';
+      } else {
+        return problem(c, {
+          status: 402,
+          error: 'payment_required',
+          message: 'Buy this export, or a plan, to export print-ready files.',
+        });
+      }
     }
+    const handBack = () =>
+      entitlement === 'free'
+        ? releaseFreeExport(s.db, s.account.id)
+        : entitlement === 'credit'
+          ? addExportCredit(s.db, s.account.id)
+          : Promise.resolve();
 
     try {
       const inputs = skuInputs(sku);
@@ -406,7 +463,8 @@ export function registerSkuRoutes(app: Hono<AppEnv>, deps: Deps) {
         ...(sku.vintage_or_batch ? { vintageOrBatch: sku.vintage_or_batch } : {}),
       };
       const issuedOn = resolveIssueDate(read.body.issuedOn, deps.now());
-      const files = await renderExportFiles(inputs, options, details, issuedOn, true, rules);
+      const watermark = edition === 'preview';
+      const files = await renderExportFiles(inputs, options, details, issuedOn, watermark, rules);
       const exportId = deps.newId();
       const key = (fileName: string) => `exports/${s.account.id}/${exportId}/${fileName}`;
       for (const file of files) {
@@ -428,21 +486,22 @@ export function registerSkuRoutes(app: Hono<AppEnv>, deps: Deps) {
         options_json: JSON.stringify(options),
         details_json: JSON.stringify(details),
         issued_on: issuedOn,
-        watermarked: 1,
+        watermarked: watermark ? 1 : 0,
         svg_key: byKind.svg,
         pdf_key: byKind.pdf,
         pdf14_key: byKind.pdf14,
         proof_key: byKind.proof,
         output_hash: await outputHash(files),
         created_at: at(),
+        entitlement,
       };
       await insertExport(s.db, row);
       rulesSha ??= sha256Hex(JSON.stringify(rules.file));
       await recordRulesVersion(s.db, rules.version, await rulesSha, at());
-      deps.log({ event: 'account_export', exportId, files: files.length });
+      deps.log({ event: 'account_export', exportId, files: files.length, edition, entitlement });
       return c.json({ export: exportJson(row) }, 201, noStore);
     } catch (error) {
-      await releaseFreeExport(s.db, s.account.id);
+      await handBack();
       const refused = exportProblem(error);
       if (refused) return problem(c, refused.problem, refused.extra);
       throw error;

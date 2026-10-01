@@ -9,7 +9,18 @@
   import { onMount, tick, untrack } from 'svelte';
   import { afterNavigate, beforeNavigate, replaceState } from '$app/navigation';
   import Ruler from '$lib/components/Ruler.svelte';
-  import { api, shortDate, type Sku, type StoredExport } from '$lib/account';
+  import {
+    api,
+    priceLabel,
+    shortDate,
+    shows,
+    startCheckout,
+    takeCheckoutResult,
+    type Billing,
+    type Product,
+    type Sku,
+    type StoredExport,
+  } from '$lib/account';
   import { restoreForm, storeDraft, takeDraft } from '$lib/draft';
   import {
     formFromSku,
@@ -20,7 +31,7 @@
     statementRequest,
     type FormState,
   } from '$lib/request';
-  import { session } from '$lib/session.svelte';
+  import { refreshSession, session, waitForAccount } from '$lib/session.svelte';
   import type { PageData } from './$types';
 
   let { data }: { data: PageData } = $props();
@@ -89,9 +100,11 @@
 
   let touched = $state<Partial<Record<Field, boolean>>>({});
   let attempted = $state(false);
-  let exporting = $state(false);
+  /** The export under way, if any: the free preview or print-ready files. */
+  let exporting = $state<'preview' | 'print' | null>(null);
   let exportError = $state<string | null>(null);
   let files = $state<DownloadFile[]>([]);
+  let filesEdition = $state<'preview' | 'print'>('preview');
   let filesHeading = $state<HTMLElement | null>(null);
   let checksHeading = $state<HTMLElement | null>(null);
 
@@ -101,6 +114,17 @@
   let savedBody = $state<string | null>(null);
   let saving = $state(false);
   let skuNotice = $state<string | null>(null);
+
+  // Print-ready exports: prices from Stripe, the way back from Checkout.
+  let billing = $state<Billing | null>(null);
+  let buying = $state(false);
+  let paymentNotice = $state<{ text: string; kind: 'ok' | 'note' } | null>(null);
+  let printButton = $state<HTMLButtonElement | null>(null);
+  const forSale = (id: string) =>
+    billing?.available ? (billing.products.find((p) => p.id === id) ?? null) : null;
+  const exportProduct = $derived(forSale('export'));
+  const planProduct = $derived(forSale('producer'));
+  const busy = $derived(saving || buying || exporting !== null);
 
   const beverage = $derived(config.beverageTypes.find((t) => t.id === form.beverage) ?? first);
   const request = $derived(statementRequest(form));
@@ -164,6 +188,13 @@
     // the field happened before any handler existed: count those fields as already entered.
     const typed = markEntered();
     const id = new URLSearchParams(location.search).get('sku');
+    const checkout = takeCheckoutResult();
+    loadBilling();
+    if (checkout?.outcome === 'cancelled') {
+      paymentNotice = { text: 'Checkout was cancelled. Nothing was charged.', kind: 'note' };
+    } else if (checkout?.outcome === 'complete') {
+      confirmPayment(checkout.product);
+    }
     if (id) {
       openSku(id);
     } else if (!typed) {
@@ -217,6 +248,31 @@
       if (org && producer.trim() === '' && skuId === null) producer = org;
     });
   });
+
+  async function loadBilling() {
+    try {
+      const res = await api<Billing>('billing');
+      if (res.ok) billing = res.data;
+    } catch {
+      // Without prices the buy button stays hidden; exporting on a plan or credit still works.
+    }
+  }
+
+  /** Back from Stripe Checkout: waits for the webhook to record the payment. */
+  async function confirmPayment(product: Product['id'] | null) {
+    paymentNotice = { text: 'Payment received. Confirming it with Stripe…', kind: 'note' };
+    const confirmed = await waitForAccount(shows(product));
+    paymentNotice = confirmed
+      ? { text: 'Payment confirmed: export the print-ready files below.', kind: 'ok' }
+      : {
+          text: 'Payment received. It can take a minute to confirm: reload the page shortly.',
+          kind: 'note',
+        };
+    if (confirmed) {
+      await tick();
+      printButton?.focus();
+    }
+  }
 
   function startNew() {
     opening++;
@@ -343,7 +399,7 @@
     }
     // No check against the last preview here: it can lag the inputs by a request. The server
     // validates the values sent and refuses a blocked statement without using the free export.
-    exporting = true;
+    exporting = 'preview';
     try {
       const res = await fetch('/api/export', {
         method: 'POST',
@@ -380,12 +436,13 @@
         ),
       );
       freeExportAvailable = false;
+      filesEdition = 'preview';
       await tick();
       filesHeading?.focus();
     } catch {
       exportError = 'The export failed. Check your connection and try again.';
     } finally {
-      exporting = false;
+      exporting = null;
     }
   }
 
@@ -441,16 +498,23 @@
     }
   }
 
-  /** Saves the SKU, then exports it: the files go to storage and the export to its record. */
-  async function exportSku() {
+  /** Asks for the producer and product before anything is saved or exported. */
+  async function namesMissing(): Promise<boolean> {
     attempted = true;
     exportError = null;
-    if (nameProblems.length > 0) {
-      await tick();
-      document.getElementById(nameProblems[0]!.field)?.focus();
-      return;
-    }
-    exporting = true;
+    if (nameProblems.length === 0) return false;
+    await tick();
+    document.getElementById(nameProblems[0]!.field)?.focus();
+    return true;
+  }
+
+  /**
+   * Saves the SKU, then exports it: the files go to storage and the export to its record. The
+   * preview is the free watermarked one; print-ready files are paid for by the plan or a credit.
+   */
+  async function exportSku(edition: 'preview' | 'print') {
+    if (await namesMissing()) return;
+    exporting = edition;
     try {
       const id = await storeSku();
       if (!id) return;
@@ -461,7 +525,7 @@
         field?: string;
       }>(`skus/${encodeURIComponent(id)}/exports`, {
         method: 'POST',
-        body: { issuedOn: localDate() },
+        body: { issuedOn: localDate(), edition },
       });
       if (!res.ok || !res.data?.export) {
         const error = res.data?.error;
@@ -474,6 +538,7 @@
         if (error === 'free_export_used' && session.account) {
           session.account.freeExportAvailable = false;
         }
+        if (error === 'payment_required') refreshSession();
         exportError = res.data?.message ?? 'The export failed. Try again.';
         if (error === 'producer_required') document.getElementById('producer')?.focus();
         return;
@@ -481,13 +546,31 @@
       const stored = res.data.export;
       skuExports = [stored, ...skuExports];
       showFiles(stored.files.map((f) => ({ fileName: f.fileName, size: null, url: f.url })));
-      if (session.account) session.account.freeExportAvailable = false;
+      filesEdition = edition;
+      paymentNotice = null;
+      if (edition === 'preview' && session.account) session.account.freeExportAvailable = false;
+      if (edition === 'print') refreshSession(); // a credit used, or the plan unchanged
       await tick();
       filesHeading?.focus();
     } catch {
       exportError = 'The export failed. Check your connection and try again.';
     } finally {
-      exporting = false;
+      exporting = null;
+    }
+  }
+
+  /** Saves the SKU and goes to Stripe Checkout to buy one print-ready export of it. */
+  async function buyExport() {
+    if (await namesMissing()) return;
+    buying = true;
+    try {
+      const id = await storeSku();
+      const message = id ? await startCheckout('export', id) : 'not saved';
+      if (message) buying = false; // otherwise the browser is on its way to Stripe
+      if (id && message) exportError = message;
+    } catch {
+      buying = false;
+      exportError = 'Checkout could not be started. Check your connection and try again.';
     }
   }
 
@@ -1009,34 +1092,74 @@
     </div>
 
     {#if account}
+      {#if paymentNotice}
+        <p class="msg {paymentNotice.kind}" role="status">{paymentNotice.text}</p>
+      {/if}
       <div class="actions">
-        <button type="button" class="secondary" onclick={saveSku} disabled={saving || exporting}>
+        <button type="button" class="secondary" onclick={saveSku} disabled={busy}>
           {saving ? 'Saving…' : skuId ? 'Save changes' : 'Save SKU'}
         </button>
-        {#if account.freeExportAvailable}
+        {#if account.printReady}
           <button
             type="button"
             class="primary"
-            onclick={exportSku}
-            aria-describedby="export-hint"
-            disabled={exporting || saving}
+            bind:this={printButton}
+            onclick={() => exportSku('print')}
+            aria-describedby="print-hint"
+            disabled={busy}
           >
-            {exporting ? 'Exporting…' : 'Export free preview files'}
+            {exporting === 'print' ? 'Exporting…' : 'Export print-ready files'}
+          </button>
+        {:else if exportProduct}
+          <button
+            type="button"
+            class="primary"
+            onclick={buyExport}
+            aria-describedby="print-hint"
+            disabled={busy}
+          >
+            {buying ? 'Opening checkout…' : `Buy this export: ${priceLabel(exportProduct)}`}
+          </button>
+        {/if}
+        {#if account.freeExportAvailable}
+          <button
+            type="button"
+            class="secondary"
+            onclick={() => exportSku('preview')}
+            aria-describedby="export-hint"
+            disabled={busy}
+          >
+            {exporting === 'preview' ? 'Exporting…' : 'Export free preview files'}
           </button>
         {/if}
         <p class="saved" role="status">
           {skuId ? (unsaved ? 'Unsaved changes.' : 'Saved to your SKUs.') : ''}
         </p>
       </div>
+      <p class="hint" id="print-hint">
+        {#if account.printReady === 'subscription'}
+          {account.plan === 'printer' ? 'Printer plan' : 'Producer plan'}: unlimited print-ready
+          exports.
+        {:else if account.printReady === 'credit'}
+          {account.exportCredits} print-ready {account.exportCredits === 1 ? 'export' : 'exports'} to
+          use.
+        {:else if exportProduct}
+          Print-ready SVG, PDF, PDF 1.4 and proof sheet, without the watermark.{planProduct
+            ? ` Or export without limit on the Producer plan, ${priceLabel(planProduct)}.`
+            : ''} Prices include GST. <a href="/billing">Plans and billing</a>
+        {:else if billing}
+          Print-ready exports open when payments are set up.
+        {/if}
+      </p>
       {#if account.freeExportAvailable}
         <p class="hint" id="export-hint">
           Watermarked SVG, PDF (to PDF/X-4 rules), PDF 1.4 and an A4 proof sheet, for checking size
-          and layout. Exporting saves the SKU and records the export with its rules version. One
-          free preview export per account.
+          and layout. One free preview export per account.
         </p>
       {:else}
         <p>This account has used its free preview export.</p>
       {/if}
+      <p class="hint">Every export saves the SKU and records the export with its rules version.</p>
     {:else}
       {#if freeExportAvailable}
         <button
@@ -1044,7 +1167,7 @@
           class="primary"
           onclick={exportPreview}
           aria-describedby="export-hint"
-          disabled={exporting}
+          disabled={exporting !== null}
         >
           {exporting ? 'Exporting…' : 'Export free preview files'}
         </button>
@@ -1056,17 +1179,19 @@
         <p>This browser has used its free preview export.</p>
       {/if}
       <p class="hint">
-        <a href="/sign-in">Sign in</a> to save this product as a SKU and keep a record of each export.
+        <a href="/sign-in">Sign in</a> to save this product as a SKU, keep a record of each export and
+        buy print-ready files.
       </p>
     {/if}
-    <p class="hint">Print-ready exports without the watermark open when checkout is available.</p>
 
     {#if exportError}
       <p class="msg block" role="alert">{exportError}</p>
     {/if}
 
     {#if files.length > 0}
-      <h3 tabindex="-1" bind:this={filesHeading}>Your preview files</h3>
+      <h3 tabindex="-1" bind:this={filesHeading}>
+        {filesEdition === 'print' ? 'Your print-ready files' : 'Your preview files'}
+      </h3>
       <ul class="files">
         {#each files as file (file.fileName)}
           <li>
@@ -1084,7 +1209,11 @@
           <li>
             <p>
               <strong>{shortDate(item.createdAt)}</strong> · rules {item.rulesVersion} ·
-              {item.watermarked ? 'watermarked preview' : 'print-ready'} ·
+              {item.watermarked
+                ? 'watermarked preview'
+                : item.entitlement === 'subscription'
+                  ? 'print-ready, on the plan'
+                  : 'print-ready, bought export'} ·
               <span class="hash" title={item.outputHash}
                 >output hash {item.outputHash.slice(0, 12)}…</span
               >

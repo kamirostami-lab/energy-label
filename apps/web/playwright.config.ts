@@ -17,9 +17,10 @@ export default defineConfig({
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {
-    // A fresh local D1 database gets the migrations; sign-in emails go to the in-memory outbox.
+    // A fresh local D1 database gets the migrations; sign-in emails go to the in-memory outbox and
+    // payments to the Stripe stand-in.
     command:
-      'pnpm exec wrangler d1 migrations apply DB --local && pnpm exec wrangler dev --port 8787 --ip 127.0.0.1 --var MAIL_TRANSPORT:outbox',
+      'pnpm exec wrangler d1 migrations apply DB --local && pnpm exec wrangler dev --port 8787 --ip 127.0.0.1 --var MAIL_TRANSPORT:outbox --var STRIPE_TRANSPORT:fake',
     url: 'http://127.0.0.1:8787/',
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

@@ -12,7 +12,7 @@ import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { z } from 'zod';
 import { SESSION_COOKIE, accountJson, currentAccount, type AppEnv, type Deps } from '../context.ts';
 import { randomToken, sha256Hex } from '../crypto.ts';
-import { noStore, problem, readBody } from '../http.ts';
+import { isLocalhost, noStore, problem, readBody } from '../http.ts';
 import { mailerFor, outbox, signInMessage } from '../mail.ts';
 import {
   ROLES,
@@ -42,9 +42,6 @@ export function normaliseEmail(input: string): string | null {
   const email = input.trim().toLowerCase();
   return email.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : null;
 }
-
-const isLocalhost = (url: string) =>
-  ['localhost', '127.0.0.1', '[::1]'].includes(new URL(url).hostname);
 
 export function registerAuthRoutes(app: Hono<AppEnv>, deps: Deps) {
   const at = (offsetMs = 0) => new Date(deps.now().getTime() + offsetMs).toISOString();
@@ -134,13 +131,13 @@ export function registerAuthRoutes(app: Hono<AppEnv>, deps: Deps) {
       sameSite: 'Lax',
     });
     deps.log({ event: 'signed_in' });
-    return c.json({ account: accountJson(account) }, 200, noStore);
+    return c.json({ account: accountJson(account, deps.now()) }, 200, noStore);
   });
 
   // Every page asks on load, so a visitor is an answer, not an error.
   app.get('/auth/me', async (c) => {
     const account = await currentAccount(c, deps);
-    return c.json({ account: account ? accountJson(account) : null }, 200, noStore);
+    return c.json({ account: account ? accountJson(account, deps.now()) : null }, 200, noStore);
   });
 
   app.post('/auth/sign-out', async (c) => {
@@ -186,7 +183,7 @@ export function registerAuthRoutes(app: Hono<AppEnv>, deps: Deps) {
       ...(role !== undefined ? { role: role as (typeof ROLES)[number] } : {}),
     });
     const updated = await accountById(c.env.DB, account.id);
-    return c.json({ account: accountJson(updated!) }, 200, noStore);
+    return c.json({ account: accountJson(updated!, deps.now()) }, 200, noStore);
   });
 
   // Local development and browser tests only: the outbox transport's messages for one address.

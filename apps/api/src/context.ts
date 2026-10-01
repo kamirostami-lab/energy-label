@@ -3,6 +3,8 @@
 import type { EnergyStatementRules } from '@energy-panel/rules';
 import type { Context } from 'hono';
 import { getCookie } from 'hono/cookie';
+import { printReadyBy } from './billing/entitlements.ts';
+import type { Stripe } from './billing/stripe.ts';
 import { sha256Hex } from './crypto.ts';
 import type { Env } from './env.ts';
 import type { Mailer } from './mail.ts';
@@ -17,6 +19,8 @@ export interface Deps {
   newId: () => string;
   /** Overrides the mailer chosen from the environment (tests). */
   mailer?: (env: Env) => Mailer | null;
+  /** Overrides Stripe as chosen from the environment (tests). */
+  stripe?: (env: Env) => Stripe | null;
 }
 
 export type AppEnv = {
@@ -38,7 +42,7 @@ export async function currentAccount(c: AppContext, deps: Deps): Promise<Account
   return account;
 }
 
-export function accountJson(account: AccountRow) {
+export function accountJson(account: AccountRow, now: Date) {
   return {
     id: account.id,
     email: account.email,
@@ -46,5 +50,18 @@ export function accountJson(account: AccountRow) {
     role: account.role,
     plan: account.plan,
     freeExportAvailable: account.free_export_used_at === null,
+    /** Print-ready exports bought and not yet used. */
+    exportCredits: account.export_credits,
+    /** What pays for the next print-ready export: the plan, a bought export, or nothing yet. */
+    printReady: printReadyBy(account, now),
+    subscription: account.subscription_id
+      ? {
+          status: account.subscription_status,
+          currentPeriodEnd: account.subscription_period_end,
+          cancelAtPeriodEnd: account.subscription_cancel_at_period_end === 1,
+        }
+      : null,
+    /** Stripe knows this account, so the Customer Portal has something to show. */
+    billingAccount: account.stripe_customer_id !== null,
   };
 }

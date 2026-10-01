@@ -5,7 +5,7 @@ import type { z } from 'zod';
 export const noStore = { 'Cache-Control': 'no-store' } as const;
 
 export type Problem = {
-  status: 400 | 401 | 403 | 404 | 413 | 415 | 422 | 429 | 502 | 503;
+  status: 400 | 401 | 402 | 403 | 404 | 409 | 413 | 415 | 422 | 429 | 502 | 503;
   error: string;
   message: string;
 };
@@ -44,6 +44,10 @@ export async function readBody<T extends z.ZodType>(
   }
   return { ok: true, body: parsed.data };
 }
+
+/** Local development and the browser tests: where the stand-ins (mail outbox, fake Stripe) answer. */
+export const isLocalhost = (url: string) =>
+  ['localhost', '127.0.0.1', '[::1]'].includes(new URL(url).hostname);
 
 /** Rejects cross-site requests: a browser sends Origin with every POST. */
 export function crossSite(c: Context): boolean {

@@ -1,53 +1,9 @@
 // Accounts in a real browser (Build Brief 01 sections 5, 6 and 8): magic-link sign-in through the
 // local outbox, SKU records saved from the generator, the account's free export stored and
 // listed with its rules version, the SKU list and its CSV, and axe-core on the new pages.
-import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
-
-const status = (page: Page) => page.getByRole('status').first();
-const uniqueEmail = () => `e2e-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@example.com`;
-
-/** The newest sign-in link sent to `email` (the Worker runs with MAIL_TRANSPORT=outbox). */
-async function signInLink(page: Page, email: string): Promise<string> {
-  let link: string | undefined;
-  await expect(async () => {
-    const res = await page.request.get(`/api/dev/outbox?to=${encodeURIComponent(email)}`);
-    const { messages } = (await res.json()) as { messages: Array<{ text: string }> };
-    link = /(http\S+#token=[\w-]+)/.exec(messages.at(-1)?.text ?? '')?.[1];
-    expect(link).toBeTruthy();
-  }).toPass();
-  return link!;
-}
-
-/** Asks for a link on the sign-in page, follows it and finishes signing in. */
-async function signIn(page: Page, email: string) {
-  if (!page.url().endsWith('/sign-in')) await page.goto('/sign-in');
-  await page.getByLabel('Email address').fill(email);
-  await page.getByRole('button', { name: 'Email me a sign-in link' }).click();
-  await expect(page.getByRole('heading', { name: 'Check your email' })).toBeFocused();
-  const link = await signInLink(page, email);
-  await page.goto(link);
-  await expect(page).toHaveURL(/\/sign-in\/confirm$/); // the token leaves the address bar
-  await page.getByRole('button', { name: 'Finish signing in' }).click();
-}
-
-async function checkAxe(page: Page) {
-  const results = await new AxeBuilder({ page }).analyze();
-  const serious = results.violations.filter(
-    (v) => v.impact === 'serious' || v.impact === 'critical',
-  );
-  expect(serious.map((v) => `${v.id}: ${v.help}`)).toEqual([]);
-}
-
-/** The FSANZ guidance example: fortified wine, 21.1% ABV, 720 mL, 592 kJ per 100 mL. */
-async function enterFsanzExample(page: Page) {
-  await page.getByRole('radio', { name: 'Fortified wine' }).check();
-  await page.getByLabel('Alcohol by volume').fill('21.1');
-  await page.getByLabel('Package volume').fill('720');
-  await page.getByLabel('Average energy kJ per 100 mL').fill('592');
-  await expect(status(page)).toHaveText('Ready to export.');
-}
+import { checkAxe, enterFsanzExample, signIn, signInLink, status, uniqueEmail } from './helpers';
 
 test('signs in with an emailed link, saves a SKU, exports it and lists it', async ({ page }) => {
   await signIn(page, uniqueEmail());
@@ -123,7 +79,9 @@ test('signs in with an emailed link, saves a SKU, exports it and lists it', asyn
   expect(record.suggestedFilename()).toMatch(/^\d{8}-komms-haus-energy-panel-exports\.csv$/);
   const rows = (await readFile((await record.path())!, 'utf8')).trim().split('\r\n');
   expect(rows).toHaveLength(2);
-  expect(rows[1]).toMatch(/,true,Komms-Haus,Reserve Tawny,Batch 8,21\.1,720,60,.*,[0-9a-f]{64}$/);
+  expect(rows[1]).toMatch(
+    /,true,free,Komms-Haus,Reserve Tawny,Batch 8,21\.1,720,60,.*,[0-9a-f]{64}$/,
+  );
 
   // Opening the SKU from the list brings its values and exports back.
   await row.getByRole('link', { name: 'Reserve Tawny' }).click();
