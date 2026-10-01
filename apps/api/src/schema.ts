@@ -72,6 +72,8 @@ export const accountExportSchema = z
   .object({
     /** The visitor's local date as YYYY-MM-DD; used when within a day of the server's. */
     issuedOn: z.string().max(10).optional(),
+    /** preview: watermarked, the free one (D3); print: without the mark, paid for (session 5). */
+    edition: z.enum(['preview', 'print']).optional(),
   })
   .strict();
 

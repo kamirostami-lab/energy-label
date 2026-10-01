@@ -38,6 +38,7 @@
         {#if session.account}
           <a href="/skus" aria-current={current('/skus')}>Your SKUs</a>
         {/if}
+        <a href="/billing" aria-current={current('/billing')}>Plans</a>
       </nav>
       <div class="account">
         {#if session.account}

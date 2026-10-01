@@ -10,10 +10,16 @@ export interface AccountRow {
   email: string;
   org_name: string | null;
   role: Role;
+  /** free, or the plan an exporting subscription grants (producer, printer). */
   plan: string;
   stripe_customer_id: string | null;
   free_export_used_at: string | null;
   created_at: string;
+  export_credits: number;
+  subscription_id: string | null;
+  subscription_status: string | null;
+  subscription_period_end: string | null;
+  subscription_cancel_at_period_end: number;
 }
 
 export interface SkuRow {
@@ -61,6 +67,25 @@ export interface ExportRow {
   proof_key: string;
   output_hash: string;
   created_at: string;
+  /** free (the watermarked preview), credit (a bought export) or subscription. */
+  entitlement: 'free' | 'credit' | 'subscription';
+}
+
+export interface PurchaseRow {
+  checkout_session_id: string;
+  account_id: string;
+  product: 'export' | 'producer' | 'printer';
+  amount_total: number | null;
+  currency: string | null;
+  created_at: string;
+}
+
+export interface SubscriptionState {
+  plan: string;
+  subscription_id: string;
+  subscription_status: string;
+  subscription_period_end: string | null;
+  subscription_cancel_at_period_end: number;
 }
 
 // Accounts
@@ -116,6 +141,106 @@ export async function claimFreeExport(db: D1Database, id: string, now: string): 
 
 export async function releaseFreeExport(db: D1Database, id: string): Promise<void> {
   await db.prepare('UPDATE accounts SET free_export_used_at = NULL WHERE id = ?').bind(id).run();
+}
+
+// Billing
+
+export const accountByStripeCustomer = (db: D1Database, customer: string) =>
+  db
+    .prepare('SELECT * FROM accounts WHERE stripe_customer_id = ?')
+    .bind(customer)
+    .first<AccountRow>();
+
+/** Stores the account's Stripe customer unless it has one; returns the one it keeps. */
+export async function setStripeCustomer(
+  db: D1Database,
+  id: string,
+  customer: string,
+): Promise<string> {
+  await db
+    .prepare(
+      'UPDATE accounts SET stripe_customer_id = ? WHERE id = ? AND stripe_customer_id IS NULL',
+    )
+    .bind(customer, id)
+    .run();
+  const row = await db
+    .prepare('SELECT stripe_customer_id FROM accounts WHERE id = ?')
+    .bind(id)
+    .first<{ stripe_customer_id: string | null }>();
+  return row?.stripe_customer_id ?? customer;
+}
+
+/** Records a paid Checkout Session; false when it was recorded before (a redelivered event). */
+export async function recordPurchase(db: D1Database, row: PurchaseRow): Promise<boolean> {
+  const result = await db
+    .prepare(
+      'INSERT OR IGNORE INTO purchases (checkout_session_id, account_id, product, amount_total, currency, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+    )
+    .bind(
+      row.checkout_session_id,
+      row.account_id,
+      row.product,
+      row.amount_total,
+      row.currency,
+      row.created_at,
+    )
+    .run();
+  return result.meta.changes === 1;
+}
+
+export async function addExportCredit(db: D1Database, id: string): Promise<void> {
+  await db
+    .prepare('UPDATE accounts SET export_credits = export_credits + 1 WHERE id = ?')
+    .bind(id)
+    .run();
+}
+
+/** Uses one bought export; false when there is none left (race-safe). */
+export async function useExportCredit(db: D1Database, id: string): Promise<boolean> {
+  const result = await db
+    .prepare(
+      'UPDATE accounts SET export_credits = export_credits - 1 WHERE id = ? AND export_credits > 0',
+    )
+    .bind(id)
+    .run();
+  return result.meta.changes === 1;
+}
+
+export async function updateSubscription(
+  db: D1Database,
+  id: string,
+  state: SubscriptionState,
+): Promise<void> {
+  await db
+    .prepare(
+      'UPDATE accounts SET plan = ?, subscription_id = ?, subscription_status = ?, subscription_period_end = ?, subscription_cancel_at_period_end = ? WHERE id = ?',
+    )
+    .bind(
+      state.plan,
+      state.subscription_id,
+      state.subscription_status,
+      state.subscription_period_end,
+      state.subscription_cancel_at_period_end,
+      id,
+    )
+    .run();
+}
+
+export async function stripeEventSeen(db: D1Database, id: string): Promise<boolean> {
+  const row = await db.prepare('SELECT id FROM stripe_events WHERE id = ?').bind(id).first();
+  return row !== null;
+}
+
+export async function recordStripeEvent(
+  db: D1Database,
+  id: string,
+  type: string,
+  now: string,
+): Promise<void> {
+  await db
+    .prepare('INSERT OR IGNORE INTO stripe_events (id, type, received_at) VALUES (?, ?, ?)')
+    .bind(id, type, now)
+    .run();
 }
 
 // Sign-in links and sessions (hashes only)

@@ -17,3 +17,20 @@ export async function refreshSession(): Promise<Account | null> {
   }
   return session.account;
 }
+
+/**
+ * After Stripe Checkout: Stripe tells the server by webhook, which can trail the redirect by a
+ * few seconds. Checks the account until `ready` holds, for up to `tries` × `everyMs`.
+ */
+export async function waitForAccount(
+  ready: (account: Account) => boolean,
+  tries = 15,
+  everyMs = 2000,
+): Promise<boolean> {
+  for (let i = 0; i < tries; i++) {
+    const account = await refreshSession();
+    if (account && ready(account)) return true;
+    await new Promise((resolve) => setTimeout(resolve, everyMs));
+  }
+  return false;
+}

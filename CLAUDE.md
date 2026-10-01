@@ -13,8 +13,8 @@ responsible for compliance, and every screen must say so.
 | 2       | PDF export with pdf-lib, outlined text, PDF/X-4 metadata; proof sheet                       | Done               |
 | 3       | SvelteKit generator, live preview, validation states, export bar; preview deploy            | Done (see Deploy)  |
 | 4       | D1 migrations, magic-link auth (Resend), SKU records, exports to R2                         | Done (see Deploy)  |
-| 5       | Stripe Checkout and Portal, webhooks, entitlements                                          | Next               |
-| 6       | Printer profiles, subdomain routing, branding, job history                                  |                    |
+| 5       | Stripe Checkout and Portal, webhooks, entitlements                                          | Done (see Billing) |
+| 6       | Printer profiles, subdomain routing, branding, job history                                  | Next               |
 | 7       | Checklist from `rules/anz-label-elements.json`, tick record, CSV export                     |                    |
 | 8       | Accessibility pass, error copy, rate limiting, logging, production deploy                   |                    |
 
@@ -50,11 +50,12 @@ packages/panel/                     buildStatement(): compute, validate, lay out
   src/font/*.generated.ts           glyph outlines and kerning (pnpm glyphs:build; never edit)
   scripts/check-pdfs.ts             Poppler preflight of the exports (pnpm pdf:check)
 test/fixtures/                      golden inputs (*.json) and reviewed artwork (*.svg, *.pdf)
-apps/api/                           Hono API under /api; routes in src/routes (statement, auth, skus)
+apps/api/                           Hono API under /api; routes in src/routes (statement, auth, skus, billing)
   src/store.ts, export-files.ts     D1 queries (always scoped to the account); export rendering, hash, replay
+  src/billing/                      products (lookup keys), Stripe client and signatures, entitlements, stand-in
   test/                             Vitest against a local D1 and R2 (wrangler getPlatformProxy)
 apps/web/                           SvelteKit: generator, sign-in, SKU list; one Worker with static assets
-  tests/                            Playwright: generate flow, sign-in, SKUs and exports, axe-core
+  tests/                            Playwright: generate flow, sign-in, SKUs, payments, axe-core
 migrations/                         D1 schema, applied in order by wrangler d1 migrations apply
 scripts/                            secrets check, rules-change guard (node:test tests beside them)
 ```
@@ -156,8 +157,8 @@ loads the rules loader or the renderer.
   in CSS millimetres beside a millimetre ruler, at 1×, 2× or 4×.
 - **Free tier (D3)**: `POST /api/export` returns a watermarked SVG, PDF, PDF 1.4 and proof sheet,
   once per browser (cookie `ep_free_export`, HttpOnly), to visitors who are not signed in. Signed
-  in, the export goes through the account instead (see accounts). Print-ready exports arrive with
-  checkout (session 5).
+  in, the export goes through the account instead (see accounts), and print-ready files are bought
+  (see billing).
 - **Validation states** come from the panel's findings: field messages appear once a field has
   been left (or an export tried), and the Checks list shows everything that blocks, warns or notes.
 - **API hygiene**: JSON only (415 otherwise), cross-site `Origin` refused, 16 KB body limit,
@@ -190,13 +191,49 @@ loads the rules loader or the renderer.
   export does, stores them in R2 under `exports/<account>/<export>/<file name>` and writes an
   `exports` row: inputs, resolved options, names, rules version, issue date and output hash. The
   output hash is SHA-256 over each file's name and SHA-256; `replayExport(record, rules)` renders
-  a record again and must reproduce it (brief section 9). Until checkout an account has one free
-  watermarked export (D3), claimed atomically and handed back if the export fails.
+  a record again and must reproduce it (brief section 9). An account has one free watermarked
+  export (D3), claimed atomically and handed back if the export fails; print-ready exports are
+  paid for (see billing).
 - **SKU list** (`/skus`, brief section 8): each SKU's last export date and rules version, with CSV
   downloads of the list (`/api/skus.csv`) and of every export (`/api/exports.csv`). Text cells a
   spreadsheet would read as a formula are prefixed with an apostrophe. Checklist completion joins
   the list in session 7.
 - **Logs** carry event names and ids only: no email addresses and no input values.
+
+## How billing works
+
+- **What is sold** (D2, `apps/api/src/billing/products.ts`): one print-ready export (A$12), the
+  Producer plan (A$24 a month) and the Printer plan (A$240 a month, on sale from session 6), GST
+  included. Amounts live in Stripe on prices found by lookup key (`energy_panel_export`,
+  `energy_panel_producer_monthly`, `energy_panel_printer_monthly`); `GET /api/billing` shows them
+  as Stripe has them, and nothing is for sale while a price is missing.
+- **Stripe** (`src/billing/stripe.ts`): six REST calls through fetch, pinned to API version
+  `2026-09-30.endive`, no SDK. A subscription's period is read from its first item (the API moved
+  it there in 2025). Checkout is hosted by Stripe; payment methods come from the dashboard, since
+  the pinned version takes no `payment_method_types`. A single export asks Checkout for a tax
+  invoice; a plan gets one with every payment. `STRIPE_TAX_RATE_GST` adds the GST rate to each
+  line, so receipts and invoices show the GST part.
+- **Checkout** (`POST /api/billing/checkout`): signed in only. One Stripe customer per account
+  (idempotency key per account). A single export bought from the generator returns to its SKU
+  (`/?sku=…&checkout=complete`); a plan returns to `/billing`. The page waits for the webhook,
+  which can trail the redirect by seconds.
+- **Webhook** (`POST /api/stripe/webhook`): the raw body's `Stripe-Signature` is checked (HMAC-SHA256,
+  five minutes' tolerance, constant-time) before anything is read. Each event names an object that
+  is fetched from Stripe again, so a late or repeated event acts on the current state. A paid
+  Checkout Session is recorded once in `purchases` (keyed by session), which grants one credit;
+  subscription events set `accounts.plan` and the status, period end and cancellation. News about
+  an earlier subscription never undoes the current one. Handled event ids are kept in
+  `stripe_events`. Body limit 512 KB here, 16 KB elsewhere.
+- **Entitlements** (`src/billing/entitlements.ts`): a print-ready export (`edition: "print"`) is paid
+  for by an active, trialing or past-due plan, or by one credit, used atomically and handed back if
+  the export fails; otherwise 402. A plan whose period ended more than two days ago without news is
+  checked with Stripe before refusing. Each export records its `entitlement` (free, credit,
+  subscription), also in the export CSV.
+- **Portal** (`POST /api/billing/portal`): Stripe's Customer Portal for changing or cancelling the
+  plan, the card and invoices; it needs the portal settings saved in the Stripe dashboard.
+- **Locally**: `STRIPE_TRANSPORT=fake` (localhost only) puts a stand-in in Stripe's place, with
+  checkout and portal pages at `/api/dev/stripe/…` and the same events through the same handler.
+  The browser tests use it; put it in `apps/web/.dev.vars` for `pnpm dev`.
 
 ## Deploy
 
@@ -223,6 +260,15 @@ Preview command    npx wrangler d1 migrations apply DB --remote --config wrangle
 - **Mail**: `RESEND_API_KEY` as a secret (dashboard or `wrangler secret put`). `MAIL_FROM` goes in
   `vars` in `wrangler.jsonc` once the sender is decided (D10), because a deploy replaces
   variables set only in the dashboard; the sending domain must be verified in Resend.
+- **Stripe**: three secret-type variables on the Worker, set by Kami in the dashboard:
+  `STRIPE_SECRET_KEY` (a restricted key: Customers write, Checkout Sessions write, Customer portal
+  write, Prices and Products read, Subscriptions read), `STRIPE_WEBHOOK_SECRET` (the endpoint's
+  signing secret) and `STRIPE_TAX_RATE_GST` (not secret, but it differs between test and live mode,
+  and secrets survive deploys). The webhook endpoint is `https://<worker>/api/stripe/webhook` on
+  API version `2026-09-30.endive` with the events `checkout.session.completed`,
+  `checkout.session.async_payment_succeeded` and `customer.subscription.created`, `.updated`,
+  `.deleted`, `.paused` and `.resumed`. Test-mode keys until go-live; branch previews get no
+  webhook, so purchases there are not confirmed.
 
 ## Conventions (brief section 11)
 
@@ -246,7 +292,7 @@ Defaults apply until Kami records otherwise.
 | #   | Decision                | Applied default                                         | Needed by |
 | --- | ----------------------- | ------------------------------------------------------- | --------- |
 | D1  | Working name and domain | "Energy Panel" (repository is `energy-label`)           | session 3 |
-| D2  | Pricing                 | A$12 export; A$24/month; A$240/month                    | session 5 |
+| D2  | Pricing                 | A$12 export; A$24, A$240 a month; GST in (Kami, 1 Oct)  | session 5 |
 | D3  | Free tier               | one watermarked export per browser, and per account     | session 3 |
 | D4  | Typeface in exports     | IBM Plex Sans, outlined (applied)                       | session 1 |
 | D5  | New Zealand rules       | same rules file, `jurisdictions: ["AU","NZ"]` (applied) | session 1 |
@@ -255,6 +301,7 @@ Defaults apply until Kami records otherwise.
 | D8  | Live preview            | server-rendered, watermarked PNG (Kami, 30 Sep 2026)    | session 3 |
 | D9  | Hosting                 | one Worker with static assets, not Pages (Kami, 30 Sep) | session 3 |
 | D10 | Sign-in email sender    | to be decided; sign-in shows "not available yet" (Kami) | go-live   |
+| D11 | Plans                   | unlimited exports; Printer plan from session 6 (Kami)   | session 5 |
 
 ## Open items
 
@@ -263,6 +310,15 @@ Defaults apply until Kami records otherwise.
   buckets, give the build token D1 Edit and set the deploy and preview commands above.
 - Sign-in stays unavailable until D10: a verified sending domain in Resend, `RESEND_API_KEY`
   and `MAIL_FROM`.
+- Payments stay unavailable until Stripe is set up (test mode first): products with the lookup
+  keys, the GST tax rate, Customer Portal settings, the webhook endpoint, and the three secrets
+  (see Deploy). Live mode needs the Stripe account activated and live keys at go-live.
+- Refunds are made in the Stripe dashboard; a refunded single export's credit is not taken back
+  (no `charge.refunded` handling), so check unused credits when refunding.
+- Whether sales to New Zealand buyers should carry Australian GST is a question for Komms-Haus's
+  accountant: the GST rate applies to every checkout as configured. Stripe charges for each
+  invoice it creates for a single export.
+- Print-ready exports follow the PDF/X-4 rules but claim nothing until D7 is decided.
 - Sign-in requests are limited per address (5 an hour) but not yet per IP; that and the other
   rate limits belong to session 8.
 - Deleting a SKU or an account is not offered yet, and stored export files have no retention

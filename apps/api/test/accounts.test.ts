@@ -1,19 +1,9 @@
 // Accounts, SKU records and stored exports against a real local D1 database and R2 bucket.
-import { loadFsanzEnergyStatementRules } from '@energy-panel/rules';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import {
-  SESSION_COOKIE,
-  createApi,
-  replayExport,
-  type Env,
-  type MailMessage,
-} from '../src/index.ts';
+import { createApi, replayExport, type Env } from '../src/index.ts';
 import type { ExportRow } from '../src/store.ts';
 import { testBindings } from './env.ts';
-
-const rules = loadFsanzEnergyStatementRules();
-const fsanz = { abv: 21.1, package_ml: 720, serving_ml: 60, kj_per_100ml: 592 };
-const origin = 'http://energy.test';
+import { fsanz, json, origin, rules, setup as harness, skuBody, unique } from './harness.ts';
 
 let env: Env;
 let dispose: () => Promise<void>;
@@ -24,61 +14,7 @@ afterAll(async () => {
   await dispose();
 });
 
-function setup(start = '2026-09-30T02:00:00Z') {
-  let clock = Date.parse(start);
-  let ids = 0;
-  const sent: MailMessage[] = [];
-  const events: Array<Record<string, unknown>> = [];
-  const app = createApi({
-    rules,
-    now: () => new Date(clock),
-    log: (event) => events.push(event),
-    newId: () => `id-${Date.now()}-${++ids}`,
-    mailer: () => ({ send: async (m) => void sent.push(m) }),
-  });
-  const call = (method: string, path: string, body?: unknown, cookie?: string, bindings = env) =>
-    app.request(
-      `${origin}/api/${path}`,
-      {
-        method,
-        headers: {
-          origin,
-          ...(body === undefined ? {} : { 'content-type': 'application/json' }),
-          ...(cookie ? { cookie } : {}),
-        },
-        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-      },
-      bindings,
-    );
-  /** Requests a link for `email`, follows it, and returns the session cookie. */
-  async function signIn(email: string) {
-    expect((await call('POST', 'auth/request', { email })).status).toBe(202);
-    const token = /#token=([\w-]+)/.exec(sent.at(-1)!.text)![1];
-    const res = await call('POST', 'auth/verify', { token });
-    expect(res.status).toBe(200);
-    const value = new RegExp(`${SESSION_COOKIE}=([^;]+)`).exec(res.headers.get('set-cookie')!)![1];
-    return `${SESSION_COOKIE}=${value}`;
-  }
-  return {
-    app,
-    call,
-    signIn,
-    sent,
-    events,
-    advance: (ms: number) => void (clock += ms),
-  };
-}
-
-const json = (res: Response): Promise<any> => res.json();
-const unique = () => `user${Math.random().toString(36).slice(2, 10)}@example.com`;
-const skuBody = (overrides: object = {}) => ({
-  name: 'Reserve Tawny',
-  beverageType: 'fortified_wine',
-  vintageOrBatch: 'Batch 7',
-  inputs: fsanz,
-  options: { width_mm: 50, package_word: 'bottle' },
-  ...overrides,
-});
+const setup = (start?: string) => harness(env, start ? { start } : {});
 
 describe('magic-link sign-in', () => {
   it('emails a single-use link that signs in and creates the account', async () => {
@@ -267,6 +203,8 @@ describe('account exports', () => {
       event: 'account_export',
       exportId: exported.id,
       files: 4,
+      edition: 'preview',
+      entitlement: 'free',
     });
 
     const pdf = await call('GET', `exports/${exported.id}/files/pdf`, undefined, cookie);
@@ -298,13 +236,13 @@ describe('account exports', () => {
     );
     const [header, row] = (await csv.text()).trim().split('\r\n');
     expect(header).toBe(
-      'export_id,sku_id,issued_on,created_at,rules_version,watermarked,producer,product,' +
+      'export_id,sku_id,issued_on,created_at,rules_version,watermarked,entitlement,producer,product,' +
         'vintage_or_batch,abv,package_ml,serving_ml,servings,kj_per_100ml,cal_per_100ml,' +
         'package_surface_area_cm2,nip_displayed,standardised_beverage,width_mm,colour,' +
         'energy_units,package_word,output_hash',
     );
     expect(row).toBe(
-      `${exported.id},${sku.id},2026-09-30,2026-09-30T02:00:00.000Z,${rules.version},true,` +
+      `${exported.id},${sku.id},2026-09-30,2026-09-30T02:00:00.000Z,${rules.version},true,free,` +
         `Komms-Haus,Reserve Tawny,Batch 7,21.1,720,60,,592,,,,,50,black,kj,bottle,${exported.outputHash}`,
     );
 

@@ -74,7 +74,7 @@ export function registerStatementRoutes(app: Hono<AppEnv>, deps: Deps) {
         status: 403,
         error: 'free_export_used',
         message:
-          'This browser has used its free preview export. Paid exports open when checkout is available.',
+          'This browser has used its free preview export. Sign in to buy print-ready exports.',
       });
     }
     const read = await readBody(c, exportRequestSchema);
