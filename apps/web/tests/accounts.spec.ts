@@ -32,13 +32,11 @@ test('signs in with an emailed link, saves a SKU, exports it and lists it', asyn
   await page.getByRole('button', { name: 'Export free preview files' }).click();
   await expect(page.getByRole('heading', { name: 'Your preview files' })).toBeFocused();
   const links = page.locator('ul.files a');
-  await expect(links).toHaveCount(4);
+  await expect(links).toHaveCount(2);
   const names = await links.allTextContents();
   const stem = /^\d{8}-komms-haus-reserve-tawny-energy-panel-50mm/;
   expect(names.map((name) => name.replace(stem, ''))).toEqual([
-    '-preview.svg',
-    '-preview.pdf',
-    '-pdf14-preview.pdf',
+    '-preview.png',
     '-proof-preview.pdf',
   ]);
   const [download] = await Promise.all([page.waitForEvent('download'), links.nth(1).click()]);

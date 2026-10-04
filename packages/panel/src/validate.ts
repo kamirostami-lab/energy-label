@@ -23,8 +23,13 @@ import type {
 
 export { COLOUR_VARIANTS, ENERGY_UNITS, PACKAGE_WORD_MAX_LENGTH };
 
-/** Relative difference tolerated between an entered Cal value and kJ / 4.184. */
+/** Relative difference tolerated between an entered Cal value and kJ ÷ the rules' factor. */
 const CAL_TOLERANCE = 0.01;
+/**
+ * How far below the energy of its alcohol alone an entered kJ value may fall before it is
+ * questioned: enough to absorb a calculator's rounding, far less than a per-serving or Cal value.
+ */
+const ENERGY_FLOOR_TOLERANCE = 0.03;
 
 type Field = Finding['field'];
 
@@ -302,6 +307,19 @@ export function validateValues(
         'warning',
         'Standard drinks per serving round to zero at one decimal place. Check the serving size and alcohol content.',
         'serving_ml',
+      ),
+    );
+  }
+  // Alcohol alone gives ABV × density × energy factor kJ per 100 mL (Schedule 11, S11—2(2)), so
+  // less than that usually means a per-serving or Cal figure went into the kJ per 100 mL field.
+  const alcoholKj = inputs.abv * v.ethanol_density_g_per_ml * v.alcohol_energy_kj_per_g;
+  if (inputs.kj_per_100ml < alcoholKj * (1 - ENERGY_FLOOR_TOLERANCE)) {
+    findings.push(
+      finding(
+        'ENERGY_BELOW_ALCOHOL',
+        'warning',
+        `${formatUpTo(inputs.kj_per_100ml, 2)} kJ per 100 mL is less than the alcohol alone provides at ${formatUpTo(inputs.abv, 2)}% ABV: about ${formatUpTo(alcoholKj, 0)} kJ per 100 mL, at ${v.alcohol_energy_kj_per_g} kJ per gram of alcohol. Check that the value is per 100 mL and in kJ, not per serving or in Cal.`,
+        'kj_per_100ml',
       ),
     );
   }

@@ -32,6 +32,7 @@
     type FormState,
   } from '$lib/request';
   import { refreshSession, session, waitForAccount } from '$lib/session.svelte';
+  import { zipStore } from '$lib/zip';
   import type { PageData } from './$types';
 
   let { data }: { data: PageData } = $props();
@@ -63,6 +64,8 @@
     /** Known for files returned in the response; account exports download from storage. */
     size: number | null;
     url: string;
+    /** A visitor's free files, which exist only in this page until downloaded. */
+    bytes?: Uint8Array;
   }
 
   const first = config.beverageTypes[0]!;
@@ -105,6 +108,9 @@
   let exportError = $state<string | null>(null);
   let files = $state<DownloadFile[]>([]);
   let filesEdition = $state<'preview' | 'print'>('preview');
+  /** A visitor's free files in one archive, and whether any of them has been downloaded. */
+  let zip = $state<{ fileName: string; url: string } | null>(null);
+  let filesKept = $state(false);
   let filesHeading = $state<HTMLElement | null>(null);
   let checksHeading = $state<HTMLElement | null>(null);
 
@@ -119,16 +125,22 @@
   let billing = $state<Billing | null>(null);
   let buying = $state(false);
   let paymentNotice = $state<{ text: string; kind: 'ok' | 'note' } | null>(null);
+  /** Back from Checkout, waiting for Stripe's webhook: nothing more can be bought meanwhile. */
+  let confirming = $state(false);
+  /** A payment not confirmed in time: what was bought, for "Check again". */
+  let unconfirmed = $state<Product['id'] | null | undefined>(undefined);
   let printButton = $state<HTMLButtonElement | null>(null);
   const forSale = (id: string) =>
     billing?.available ? (billing.products.find((p) => p.id === id) ?? null) : null;
   const exportProduct = $derived(forSale('export'));
   const planProduct = $derived(forSale('producer'));
-  const busy = $derived(saving || buying || exporting !== null);
+  const busy = $derived(saving || buying || confirming || exporting !== null);
 
   const beverage = $derived(config.beverageTypes.find((t) => t.id === form.beverage) ?? first);
   const request = $derived(statementRequest(form));
   const account = $derived(session.account);
+  /** A visitor's free files are not stored anywhere: leaving the page loses them. */
+  const filesAtRisk = $derived(!account && files.some((f) => f.bytes) && !filesKept);
   /** The SKU record the save and export buttons write. */
   const skuBody = $derived({
     name: sku,
@@ -232,6 +244,21 @@
     }
   });
 
+  // A visitor's free files exist only in this page: ask before leaving them behind. Closing or
+  // reloading the tab gets the browser's own question.
+  beforeNavigate((navigation) => {
+    if (!filesAtRisk) return;
+    if (navigation.willUnload) {
+      navigation.cancel();
+    } else if (
+      !confirm(
+        'Your free preview files are not kept after you leave this page, and this browser has used its free export. Leave without downloading them?',
+      )
+    ) {
+      navigation.cancel();
+    }
+  });
+
   // The header's Generator link, or signing out, leaves the SKU for an empty form.
   afterNavigate(({ type, to }) => {
     if (type === 'enter') return;
@@ -261,13 +288,16 @@
   /** Back from Stripe Checkout: waits for the webhook to record the payment. */
   async function confirmPayment(product: Product['id'] | null) {
     paymentNotice = { text: 'Payment received. Confirming it with Stripe…', kind: 'note' };
-    const confirmed = await waitForAccount(shows(product));
+    unconfirmed = undefined;
+    confirming = true;
+    const confirmed = await waitForAccount(shows(product)).finally(() => (confirming = false));
     paymentNotice = confirmed
       ? { text: 'Payment confirmed: export the print-ready files below.', kind: 'ok' }
       : {
-          text: 'Payment received. It can take a minute to confirm: reload the page shortly.',
+          text: 'Payment received. Stripe has not confirmed it yet; it can take a minute.',
           kind: 'note',
         };
+    if (!confirmed) unconfirmed = product;
     if (confirmed) {
       await tick();
       printButton?.focus();
@@ -428,13 +458,25 @@
       }
       showFiles(
         result.files.map(
-          (f: { fileName: string; mediaType: string; size: number; base64: string }) => ({
-            fileName: f.fileName,
-            size: f.size,
-            url: URL.createObjectURL(new Blob([fromBase64(f.base64)], { type: f.mediaType })),
-          }),
+          (f: { fileName: string; mediaType: string; size: number; base64: string }) => {
+            const bytes = fromBase64(f.base64);
+            return {
+              fileName: f.fileName,
+              size: f.size,
+              url: URL.createObjectURL(new Blob([bytes], { type: f.mediaType })),
+              bytes,
+            };
+          },
         ),
       );
+      const archive = zipStore(
+        files.flatMap((f) => (f.bytes ? [{ name: f.fileName, bytes: f.bytes }] : [])),
+      );
+      zip = {
+        // The files share a name up to their suffixes: "…-50mm-preview.png" → "…-50mm-preview.zip".
+        fileName: files[0]!.fileName.replace(/\.[a-z0-9]+$/, '.zip'),
+        url: URL.createObjectURL(new Blob([archive], { type: 'application/zip' })),
+      };
       freeExportAvailable = false;
       filesEdition = 'preview';
       await tick();
@@ -448,6 +490,9 @@
 
   function showFiles(next: DownloadFile[]) {
     for (const f of files) if (f.url.startsWith('blob:')) URL.revokeObjectURL(f.url);
+    if (zip) URL.revokeObjectURL(zip.url);
+    zip = null;
+    filesKept = false;
     files = next;
   }
 
@@ -583,6 +628,12 @@
     black: 'Black',
     white: 'White on transparent',
     spot: 'Spot colour (separation “Panel”)',
+  } as const;
+  const colourHints = {
+    black: 'Printed in 100% black (CMYK 0/0/0/100).',
+    white:
+      'White is not printed: the text is left open, so the label stock shows through. Printing with white ink, for example on dark glass, clear film or a can? Choose Spot colour and ask your printer to map “Panel” to white.',
+    spot: 'One spot colour named “Panel”, for your printer to map to an ink such as white or a brand colour. It previews in black.',
   } as const;
 </script>
 
@@ -934,7 +985,7 @@
           <p class="hint">The height follows the content.</p>
         </fieldset>
 
-        <fieldset class="choices">
+        <fieldset class="choices" aria-describedby="colour-hint">
           <legend class="label">Colour</legend>
           <div class="options">
             {#each ['black', 'white', 'spot'] as const as colour (colour)}
@@ -944,6 +995,7 @@
               </label>
             {/each}
           </div>
+          <p class="hint" id="colour-hint">{colourHints[form.colour]}</p>
         </fieldset>
 
         <fieldset class="choices">
@@ -1016,13 +1068,19 @@
         {/if}
 
         {#if statement?.values}
-          <p class="reminder">
-            <strong
-              >Standard drinks in the package: {statement.values.display
-                .totalStandardDrinks}.</strong
-            >
-            State this separately on the label, not inside the energy statement.
-          </p>
+          {#if statement.values.display.totalStandardDrinks !== null}
+            <p class="reminder">
+              <strong
+                >Standard drinks in the package: {statement.values.display
+                  .totalStandardDrinks}.</strong
+              >
+              State this separately on the label, not inside the energy statement.
+            </p>
+          {:else}
+            <p class="reminder">
+              No statement of standard drinks in the package is required at this alcohol content.
+            </p>
+          {/if}
         {/if}
       </section>
 
@@ -1093,7 +1151,14 @@
 
     {#if account}
       {#if paymentNotice}
-        <p class="msg {paymentNotice.kind}" role="status">{paymentNotice.text}</p>
+        <p class="msg {paymentNotice.kind}" role="status">
+          {paymentNotice.text}
+          {#if unconfirmed !== undefined && !confirming}
+            <button type="button" class="link" onclick={() => confirmPayment(unconfirmed ?? null)}
+              >Check again</button
+            >
+          {/if}
+        </p>
       {/if}
       <div class="actions">
         <button type="button" class="secondary" onclick={saveSku} disabled={busy}>
@@ -1110,7 +1175,7 @@
           >
             {exporting === 'print' ? 'Exporting…' : 'Export print-ready files'}
           </button>
-        {:else if exportProduct}
+        {:else if exportProduct && !confirming}
           <button
             type="button"
             class="primary"
@@ -1153,8 +1218,8 @@
       </p>
       {#if account.freeExportAvailable}
         <p class="hint" id="export-hint">
-          Watermarked SVG, PDF (to PDF/X-4 rules), PDF 1.4 and an A4 proof sheet, for checking size
-          and layout. One free preview export per account.
+          A watermarked image of the panel (PNG) and an A4 proof sheet, for checking size and
+          layout. One free preview export per account.
         </p>
       {:else}
         <p>This account has used its free preview export.</p>
@@ -1172,8 +1237,8 @@
           {exporting ? 'Exporting…' : 'Export free preview files'}
         </button>
         <p class="hint" id="export-hint">
-          Watermarked SVG, PDF (to PDF/X-4 rules), PDF 1.4 and an A4 proof sheet, for checking size
-          and layout. One free preview export per browser.
+          A watermarked image of the panel (PNG) and an A4 proof sheet, for checking size and
+          layout. One free preview export per browser.
         </p>
       {:else if files.length === 0}
         <p>This browser has used its free preview export.</p>
@@ -1192,10 +1257,20 @@
       <h3 tabindex="-1" bind:this={filesHeading}>
         {filesEdition === 'print' ? 'Your print-ready files' : 'Your preview files'}
       </h3>
+      {#if zip}
+        <p>
+          Download them now: they are not kept after you leave this page.
+          <a class="zip" href={zip.url} download={zip.fileName} onclick={() => (filesKept = true)}
+            >Download both (.zip)</a
+          >
+        </p>
+      {/if}
       <ul class="files">
         {#each files as file (file.fileName)}
           <li>
-            <a href={file.url} download={file.fileName}>{file.fileName}</a>
+            <a href={file.url} download={file.fileName} onclick={() => (filesKept = true)}
+              >{file.fileName}</a
+            >
             {#if file.size !== null}<span class="size">{formatSize(file.size)}</span>{/if}
           </li>
         {/each}
@@ -1408,6 +1483,15 @@
     color: var(--muted);
     font-size: 0.875rem;
     margin-left: 0.4rem;
+  }
+  button.link {
+    font: inherit;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--accent);
+    text-decoration: underline;
+    cursor: pointer;
   }
   .history {
     margin: 0;

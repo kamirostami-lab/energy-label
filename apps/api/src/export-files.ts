@@ -3,6 +3,7 @@
 import {
   buildProofSheet,
   exportArtwork,
+  exportPreviewImage,
   type ArtworkFormat,
   type ExportedFile,
   type StatementInputs,
@@ -17,14 +18,18 @@ export interface ExportDetails {
   vintageOrBatch?: string;
 }
 
-export type FileKind = 'svg' | 'pdf' | 'pdf14' | 'proof';
-export const FILE_KINDS: readonly FileKind[] = ['svg', 'pdf', 'pdf14', 'proof'];
+export type FileKind = 'svg' | 'pdf' | 'pdf14' | 'png' | 'proof';
+export const FILE_KINDS: readonly FileKind[] = ['svg', 'pdf', 'pdf14', 'png', 'proof'];
 
 export interface ExportFile extends ExportedFile {
   kind: FileKind;
 }
 
-/** SVG, PDF (X-4 rules), PDF 1.4 and the A4 proof, always in that order. */
+/**
+ * Print-ready: SVG, PDF (X-4 rules), PDF 1.4 and the A4 proof, in that order. A watermarked
+ * preview (decision D3) is pixels only: the panel as a PNG and the proof with image panels, so
+ * there is no vector artwork to delete the PREVIEW mark from.
+ */
 export async function renderExportFiles(
   inputs: StatementInputs,
   options: StatementOptions,
@@ -33,11 +38,15 @@ export async function renderExportFiles(
   watermark: boolean,
   rules: EnergyStatementRules,
 ): Promise<ExportFile[]> {
-  const request = { issuedOn, org: details.producer, sku: details.sku, watermark };
+  const request = { issuedOn, org: details.producer, sku: details.sku };
   const files: ExportFile[] = [];
-  for (const format of ['svg', 'pdf', 'pdf14'] as ArtworkFormat[]) {
-    const file = await exportArtwork(inputs, options, rules, { format, ...request });
-    files.push({ kind: format, ...file });
+  if (watermark) {
+    files.push({ kind: 'png', ...exportPreviewImage(inputs, options, rules, request) });
+  } else {
+    for (const format of ['svg', 'pdf', 'pdf14'] as ArtworkFormat[]) {
+      const file = await exportArtwork(inputs, options, rules, { format, ...request });
+      files.push({ kind: format, ...file });
+    }
   }
   const proof = await buildProofSheet(
     inputs,

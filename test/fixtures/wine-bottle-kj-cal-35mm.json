@@ -1,5 +1,5 @@
 {
-  "description": "Synthetic inputs: 750 mL wine at 13.5% ABV, 150 mL serving, 297 kJ per 100 mL, kJ and Cal, package word bottle, 35 mm (the print-check width). 150 x 297 / 100 = 445.5 kJ, which rounds half up to 446.",
+  "description": "Synthetic inputs: 750 mL wine at 13.5% ABV, 150 mL serving, 297 kJ per 100 mL, kJ and Cal, package word bottle, 35 mm (the print-check width). 150 x 297 / 100 = 445.5 kJ, which rounds half up to 446. 297 kJ is below the 309 kJ per 100 mL that 13.5% alcohol alone provides, so the statement also carries the ENERGY_BELOW_ALCOHOL warning; the artwork is unaffected.",
   "inputs": {
     "abv": 13.5,
     "package_ml": 750,
@@ -18,8 +18,8 @@
     "standardDrinksPerServing": "1.6",
     "energyPerServingKj": "446",
     "energyPer100mlKj": "297",
-    "energyPerServingCal": "106",
-    "energyPer100mlCal": "71",
+    "energyPerServingCal": "107",
+    "energyPer100mlCal": "71.1",
     "totalStandardDrinks": "8.0"
   }
 }

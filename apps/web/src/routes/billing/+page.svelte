@@ -19,6 +19,10 @@
   let error = $state<string | null>(null);
   let notice = $state<{ text: string; kind: 'ok' | 'note' } | null>(null);
   let noticeEl = $state<HTMLElement | null>(null);
+  /** Back from Checkout, waiting for Stripe's webhook: nothing more can be bought meanwhile. */
+  let confirming = $state(false);
+  /** A payment not confirmed in time: what was bought, for "Check again". */
+  let unconfirmed = $state<Product['id'] | null | undefined>(undefined);
 
   const account = $derived(session.account ?? billing?.account ?? null);
   const planActive = $derived(account?.printReady === 'subscription');
@@ -39,20 +43,27 @@
     if (result?.outcome === 'cancelled') {
       notice = { text: 'Checkout was cancelled. Nothing was charged.', kind: 'note' };
     } else if (result?.outcome === 'complete') {
-      notice = { text: 'Payment received. Confirming it with Stripe…', kind: 'note' };
-      waitForAccount(shows(result.product)).then(async (confirmed) => {
-        notice = confirmed
-          ? { text: 'Payment confirmed. Thank you.', kind: 'ok' }
-          : {
-              text: 'Payment received. It can take a minute to show here: reload the page shortly.',
-              kind: 'note',
-            };
-        await load();
-        await tick();
-        noticeEl?.focus();
-      });
+      confirm(result.product);
     }
   });
+
+  /** Back from Stripe Checkout: waits for the webhook to record the payment. */
+  async function confirm(product: Product['id'] | null) {
+    notice = { text: 'Payment received. Confirming it with Stripe…', kind: 'note' };
+    unconfirmed = undefined;
+    confirming = true;
+    const confirmed = await waitForAccount(shows(product)).finally(() => (confirming = false));
+    notice = confirmed
+      ? { text: 'Payment confirmed. Thank you.', kind: 'ok' }
+      : {
+          text: 'Payment received. Stripe has not confirmed it yet; it can take a minute.',
+          kind: 'note',
+        };
+    if (!confirmed) unconfirmed = product;
+    await load();
+    await tick();
+    noticeEl?.focus();
+  }
 
   async function buy(product: Product) {
     busy = product.id;
@@ -95,6 +106,11 @@
       bind:this={noticeEl}
     >
       {notice.text}
+      {#if unconfirmed !== undefined && !confirming}
+        <button type="button" class="link" onclick={() => confirm(unconfirmed ?? null)}
+          >Check again</button
+        >
+      {/if}
     </p>
   {/if}
 
@@ -152,6 +168,8 @@
               <p><a href="/sign-in">Sign in to buy</a></p>
             {:else if product.mode === 'subscription' && planActive}
               <p class="current">Your plan is active.</p>
+            {:else if confirming}
+              <p class="hint">Confirming your payment…</p>
             {:else}
               <button
                 type="button"
@@ -239,5 +257,14 @@
   .current {
     color: var(--ok);
     font-weight: 600;
+  }
+  button.link {
+    font: inherit;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--accent);
+    text-decoration: underline;
+    cursor: pointer;
   }
 </style>

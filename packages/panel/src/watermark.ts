@@ -1,6 +1,6 @@
 // The PREVIEW mark on the live preview and on free preview exports (decision D3): one word set
-// behind the panel content, light enough to read the statement through. It is drawn from the
-// same outlines as the artwork, so previews need no fonts either.
+// behind the panel content, light enough to read the statement through. It is only ever burned
+// into pixels (raster.ts), never added to vector artwork, where it could be deleted as one object.
 import { FONT, type PanelLayout } from './layout.ts';
 import { measureText, outlineCommands, type PathCommand } from './text.ts';
 import type { ColourVariant } from './types.ts';
@@ -25,13 +25,4 @@ export function watermarkCommands(layout: PanelLayout): PathCommand[] {
   const x = (layout.width - widthPerMm * size) / 2;
   const baseline = (layout.height + capPerMm * size) / 2;
   return outlineCommands(FONT, WATERMARK_TEXT, size, x, baseline);
-}
-
-/** The tint as an sRGB grey, e.g. "#E0E0E0". */
-export function watermarkHex(colour: ColourVariant): string {
-  const level = Math.round(255 * (1 - WATERMARK_TINT[colour]))
-    .toString(16)
-    .toUpperCase()
-    .padStart(2, '0');
-  return `#${level}${level}${level}`;
 }

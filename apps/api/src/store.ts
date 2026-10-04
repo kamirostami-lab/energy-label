@@ -61,9 +61,12 @@ export interface ExportRow {
   details_json: string;
   issued_on: string;
   watermarked: number;
-  svg_key: string;
-  pdf_key: string;
-  pdf14_key: string;
+  /** Print-ready artwork; null on previews, which are pixels only (since migration 0003). */
+  svg_key: string | null;
+  pdf_key: string | null;
+  pdf14_key: string | null;
+  /** The preview's panel image; null on print-ready exports and on earlier previews. */
+  png_key: string | null;
   proof_key: string;
   output_hash: string;
   created_at: string;
@@ -128,21 +131,6 @@ export async function updateAccount(
   }
 }
 
-/** Takes the account's free export; false when it has already been used (race-safe). */
-export async function claimFreeExport(db: D1Database, id: string, now: string): Promise<boolean> {
-  const result = await db
-    .prepare(
-      'UPDATE accounts SET free_export_used_at = ? WHERE id = ? AND free_export_used_at IS NULL',
-    )
-    .bind(now, id)
-    .run();
-  return result.meta.changes === 1;
-}
-
-export async function releaseFreeExport(db: D1Database, id: string): Promise<void> {
-  await db.prepare('UPDATE accounts SET free_export_used_at = NULL WHERE id = ?').bind(id).run();
-}
-
 // Billing
 
 export const accountByStripeCustomer = (db: D1Database, customer: string) =>
@@ -170,9 +158,17 @@ export async function setStripeCustomer(
   return row?.stripe_customer_id ?? customer;
 }
 
-/** Records a paid Checkout Session; false when it was recorded before (a redelivered event). */
-export async function recordPurchase(db: D1Database, row: PurchaseRow): Promise<boolean> {
-  const result = await db
+/**
+ * Records a paid Checkout Session and, for a bought export, grants its credit, in one batch: a
+ * failure leaves neither, so Stripe's retry records both. `recorded` is false when the session was
+ * recorded before (a redelivered event); `credited` is true only for the delivery that granted it.
+ */
+export async function recordPurchase(
+  db: D1Database,
+  row: PurchaseRow,
+  grantCredit: boolean,
+): Promise<{ recorded: boolean; credited: boolean }> {
+  const insert = db
     .prepare(
       'INSERT OR IGNORE INTO purchases (checkout_session_id, account_id, product, amount_total, currency, created_at) VALUES (?, ?, ?, ?, ?, ?)',
     )
@@ -183,27 +179,25 @@ export async function recordPurchase(db: D1Database, row: PurchaseRow): Promise<
       row.amount_total,
       row.currency,
       row.created_at,
-    )
-    .run();
-  return result.meta.changes === 1;
-}
-
-export async function addExportCredit(db: D1Database, id: string): Promise<void> {
-  await db
-    .prepare('UPDATE accounts SET export_credits = export_credits + 1 WHERE id = ?')
-    .bind(id)
-    .run();
-}
-
-/** Uses one bought export; false when there is none left (race-safe). */
-export async function useExportCredit(db: D1Database, id: string): Promise<boolean> {
-  const result = await db
-    .prepare(
-      'UPDATE accounts SET export_credits = export_credits - 1 WHERE id = ? AND export_credits > 0',
-    )
-    .bind(id)
-    .run();
-  return result.meta.changes === 1;
+    );
+  if (!grantCredit) {
+    const result = await insert.run();
+    return { recorded: result.meta.changes === 1, credited: false };
+  }
+  const [inserted, credited] = await db.batch([
+    insert,
+    db
+      .prepare(
+        'UPDATE accounts SET export_credits = export_credits + 1 WHERE id = ? AND EXISTS (SELECT 1 FROM purchases WHERE checkout_session_id = ? AND credited_at IS NULL)',
+      )
+      .bind(row.account_id, row.checkout_session_id),
+    db
+      .prepare(
+        'UPDATE purchases SET credited_at = ? WHERE checkout_session_id = ? AND credited_at IS NULL',
+      )
+      .bind(row.created_at, row.checkout_session_id),
+  ]);
+  return { recorded: inserted!.meta.changes === 1, credited: credited!.meta.changes === 1 };
 }
 
 export async function updateSubscription(
@@ -422,26 +416,56 @@ export const exportById = (db: D1Database, accountId: string, id: string) =>
     .bind(id, accountId)
     .first<ExportRow>();
 
-export async function insertExport(db: D1Database, row: ExportRow): Promise<void> {
-  const columns = Object.keys(row) as Array<keyof ExportRow>;
-  await db
-    .prepare(
-      `INSERT INTO exports (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`,
-    )
-    .bind(...columns.map((c) => row[c]))
-    .run();
-}
+/** What an export spends, as it was written: kept only if it was still there to spend. */
+const SPEND: Record<ExportRow['entitlement'], { available: string; spend: string | null }> = {
+  free: {
+    available: 'SELECT 1 FROM accounts WHERE id = ? AND free_export_used_at IS NULL',
+    spend:
+      'UPDATE accounts SET free_export_used_at = ? WHERE id = ? AND free_export_used_at IS NULL AND EXISTS (SELECT 1 FROM exports WHERE id = ?)',
+  },
+  credit: {
+    available: 'SELECT 1 FROM accounts WHERE id = ? AND export_credits > 0',
+    spend:
+      'UPDATE accounts SET export_credits = export_credits - 1 WHERE id = ? AND export_credits > 0 AND EXISTS (SELECT 1 FROM exports WHERE id = ?)',
+  },
+  subscription: { available: 'SELECT 1', spend: null },
+};
 
-export async function recordRulesVersion(
+/**
+ * Writes an export record and spends what pays for it (the free preview or one bought export) in
+ * one batch, so neither happens without the other; the rules version is recorded with it. The row
+ * is written only while that is still available. False when it was not: nothing was written.
+ */
+export async function commitExport(
   db: D1Database,
-  version: string,
-  sha256: string,
+  row: ExportRow,
+  rules: { version: string; sha256: string },
   now: string,
-): Promise<void> {
-  await db
-    .prepare(
-      'INSERT OR IGNORE INTO rules_versions (version, published_at, sha256, notes) VALUES (?, ?, ?, ?)',
-    )
-    .bind(version, now, sha256, 'First export issued under this version')
-    .run();
+): Promise<boolean> {
+  const columns = Object.keys(row) as Array<keyof ExportRow>;
+  const { available, spend } = SPEND[row.entitlement];
+  const statements = [
+    db
+      .prepare(
+        `INSERT INTO exports (${columns.join(', ')}) SELECT ${columns.map(() => '?').join(', ')} WHERE EXISTS (${available})`,
+      )
+      .bind(
+        ...columns.map((c) => row[c]),
+        ...(row.entitlement === 'subscription' ? [] : [row.account_id]),
+      ),
+  ];
+  if (spend !== null) {
+    statements.push(
+      db.prepare(spend).bind(...(row.entitlement === 'free' ? [now] : []), row.account_id, row.id),
+    );
+  }
+  statements.push(
+    db
+      .prepare(
+        'INSERT OR IGNORE INTO rules_versions (version, published_at, sha256, notes) SELECT ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM exports WHERE id = ?)',
+      )
+      .bind(rules.version, now, rules.sha256, 'First export issued under this version', row.id),
+  );
+  const [inserted] = await db.batch(statements);
+  return inserted!.meta.changes === 1;
 }

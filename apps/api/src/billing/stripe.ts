@@ -1,4 +1,4 @@
-// Stripe through its REST API and the Workers runtime's fetch: the six calls billing needs, pinned
+// Stripe through its REST API and the Workers runtime's fetch: the seven calls billing needs, pinned
 // to one API version, and webhook signature checks with Web Crypto. No SDK: it would add a large
 // bundle to the Worker for six requests. Object types list only the fields read here, as the
 // pinned version shapes them (a subscription's period sits on its items since 2025-03-31).
@@ -61,6 +61,8 @@ export interface CheckoutRequest {
   cancelUrl: string;
   /** A Stripe tax rate for GST (inclusive, 10%), so receipts and invoices show it. */
   taxRate?: string;
+  /** When the session stops accepting payment, in Unix seconds (30 minutes to 24 hours ahead). */
+  expiresAt?: number;
 }
 
 /** What billing needs from Stripe: the real API, or the local stand-in (./fake.ts). */
@@ -71,6 +73,8 @@ export interface Stripe {
   createCheckoutSession(request: CheckoutRequest): Promise<{ id: string; url: string }>;
   retrieveCheckoutSession(id: string): Promise<StripeCheckoutSession>;
   retrieveSubscription(id: string): Promise<StripeSubscription>;
+  /** The customer's subscriptions in any status, newest first (at most ten). */
+  subscriptions(customer: string): Promise<StripeSubscription[]>;
   createPortalSession(customer: string, returnUrl: string): Promise<{ url: string }>;
 }
 
@@ -159,6 +163,7 @@ export function stripeApi(secretKey: string, fetcher: typeof fetch = fetch): Str
         ],
         success_url: r.successUrl,
         cancel_url: r.cancelUrl,
+        expires_at: r.expiresAt,
         metadata,
         ...(r.mode === 'payment'
           ? {
@@ -173,6 +178,14 @@ export function stripeApi(secretKey: string, fetcher: typeof fetch = fetch): Str
     },
     retrieveCheckoutSession: (id) => call('GET', `checkout/sessions/${encodeURIComponent(id)}`),
     retrieveSubscription: (id) => call('GET', `subscriptions/${encodeURIComponent(id)}`),
+    async subscriptions(customer) {
+      const list = await call<{ data: StripeSubscription[] }>('GET', 'subscriptions', {
+        customer,
+        status: 'all',
+        limit: 10,
+      });
+      return list.data;
+    },
     createPortalSession: (customer, returnUrl) =>
       call('POST', 'billing_portal/sessions', { customer, return_url: returnUrl }),
   };

@@ -90,23 +90,25 @@ describe('POST /api/preview', () => {
 });
 
 describe('POST /api/export (free preview export, decision D3)', () => {
-  it('returns watermarked SVG, PDF, PDF 1.4 and proof, and marks the browser', async () => {
+  it('returns a watermarked PNG and proof, never vector artwork, and marks the browser', async () => {
     const { post, events } = setup();
     const res = await post('export', { inputs: fsanz, options: { width_mm: 50 }, details });
     expect(res.status).toBe(200);
     const body = await json(res);
     expect(body.exportId).toBe('export-1');
+    expect(body.files.map((f: { fileName: string; mediaType: string }) => f.mediaType)).toEqual([
+      'image/png',
+      'application/pdf',
+    ]);
     expect(body.files.map((f: { fileName: string }) => f.fileName)).toEqual([
-      '20260930-komms-haus-fsanz-example-energy-panel-50mm-preview.svg',
-      '20260930-komms-haus-fsanz-example-energy-panel-50mm-preview.pdf',
-      '20260930-komms-haus-fsanz-example-energy-panel-50mm-pdf14-preview.pdf',
+      '20260930-komms-haus-fsanz-example-energy-panel-50mm-preview.png',
       '20260930-komms-haus-fsanz-example-energy-panel-50mm-proof-preview.pdf',
     ]);
-    const [svg, pdf, pdf14, proof] = body.files.map((f: { base64: string }) => decode(f.base64));
-    expect(svg.toString('utf8')).toContain('id="preview-watermark"');
-    expect(pdf.subarray(0, 8).toString('latin1')).toBe('%PDF-1.6');
-    expect(pdf14.subarray(0, 8).toString('latin1')).toBe('%PDF-1.4');
-    expect(proof.length).toBe(body.files[3].size);
+    const [png, proof] = body.files.map((f: { base64: string }) => decode(f.base64));
+    expect(png.subarray(1, 4).toString('latin1')).toBe('PNG');
+    // The proof's panels are images: no vector panel to lift the mark off.
+    expect(proof.toString('latin1').match(/\/Subtype \/Image/g)).toHaveLength(2);
+    expect(proof.length).toBe(body.files[1].size);
 
     const cookie = res.headers.get('set-cookie') ?? '';
     expect(cookie).toContain(`${FREE_EXPORT_COOKIE}=2026-09-30`);
@@ -114,7 +116,40 @@ describe('POST /api/export (free preview export, decision D3)', () => {
     expect(cookie).toMatch(/Secure/);
     expect(cookie).toMatch(/SameSite=Lax/);
     // Logs name the event and the export id, never an input value.
-    expect(events).toEqual([{ event: 'free_preview_export', exportId: 'export-1', files: 4 }]);
+    expect(events).toEqual([{ event: 'free_preview_export', exportId: 'export-1', files: 2 }]);
+  });
+
+  it('limits free exports per IP address, whatever the cookie says', async () => {
+    const { app } = setup();
+    const keys: string[] = [];
+    const limiter = {
+      limit: async ({ key }: { key: string }) => {
+        keys.push(key);
+        return { success: keys.length <= 1 };
+      },
+    };
+    const send = (host: string) =>
+      app.request(
+        `http://${host}/api/export`,
+        {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            origin: `http://${host}`,
+            'cf-connecting-ip': '203.0.113.7',
+          },
+          body: JSON.stringify({ inputs: fsanz, options: { width_mm: 50 }, details }),
+        },
+        { FREE_EXPORT_LIMIT: limiter },
+      );
+    expect((await send('energy.test')).status).toBe(200);
+    const refused = await send('energy.test');
+    expect(refused.status).toBe(429);
+    expect((await json(refused)).error).toBe('rate_limited');
+    expect(keys).toEqual(['203.0.113.7', '203.0.113.7']);
+    // Local development and the browser tests are not limited.
+    expect((await send('127.0.0.1:8787')).status).toBe(200);
+    expect(keys).toHaveLength(2);
   });
 
   it('allows one free export per browser', async () => {

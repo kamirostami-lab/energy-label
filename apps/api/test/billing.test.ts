@@ -190,7 +190,7 @@ function billing() {
     h.call(method, path, body, cookie, bindings);
 
   /** Delivers an event as Stripe would: signed, to the webhook. */
-  async function deliver(event: StripeEvent, secret = SECRET) {
+  async function deliver(event: StripeEvent, secret = SECRET, overrides: Partial<Env> = {}) {
     const payload = JSON.stringify(event);
     return h.app.request(
       `${origin}/api/stripe/webhook`,
@@ -202,7 +202,7 @@ function billing() {
         },
         body: payload,
       },
-      bindings,
+      { ...bindings, ...overrides },
     );
   }
   // Unique across tests: they share one database, and a repeated id is a redelivery.
@@ -295,11 +295,16 @@ describe('billing', () => {
     expect((await b.me(cookie)).exportCredits).toBe(1);
     const purchase = await env
       .DB!.prepare(
-        'SELECT product, amount_total, currency FROM purchases WHERE checkout_session_id = ?',
+        'SELECT product, amount_total, currency, credited_at FROM purchases WHERE checkout_session_id = ?',
       )
       .bind(session.id)
       .first();
-    expect(purchase).toEqual({ product: 'export', amount_total: 1200, currency: 'aud' });
+    expect(purchase).toEqual({
+      product: 'export',
+      amount_total: 1200,
+      currency: 'aud',
+      credited_at: '2026-09-30T02:00:00.000Z',
+    });
 
     const res = await b.call(
       'POST',
@@ -323,7 +328,7 @@ describe('billing', () => {
     expect(JSON.stringify(b.events)).not.toContain('@');
   });
 
-  it('gives a bought export back when the export fails', async () => {
+  it('keeps a bought export when the export fails', async () => {
     const b = billing();
     const { cookie, sku } = await b.producerWithSku();
     await b.pay(await b.checkout(cookie, { product: 'export' }));
@@ -331,6 +336,73 @@ describe('billing', () => {
     const blocked = await b.call('POST', `skus/${sku.id}/exports`, { edition: 'print' }, cookie);
     expect(blocked.status).toBe(422);
     expect((await b.me(cookie)).exportCredits).toBe(1);
+  });
+
+  it('records a purchase and its credit together, so Stripe’s retry after a failure grants it', async () => {
+    const b = billing();
+    const { cookie } = await b.producerWithSku();
+    const url = await b.checkout(cookie, { product: 'export' });
+    const { events } = b.fake.complete(url.split('/').pop()!, 'pay')!;
+    const completed = events.at(-1)!;
+    // The database fails as the purchase is written: nothing is kept, and Stripe will retry.
+    let failed = false;
+    const flaky = new Proxy(env.DB!, {
+      get(target, prop) {
+        if (prop === 'batch' && !failed) {
+          failed = true;
+          return async () => {
+            throw new Error('D1 unavailable');
+          };
+        }
+        const value = Reflect.get(target, prop);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+    expect((await b.deliver(completed, SECRET, { DB: flaky })).status).toBe(500);
+    expect((await b.me(cookie)).exportCredits).toBe(0);
+    expect((await b.deliver(completed)).status).toBe(200);
+    expect((await b.me(cookie)).exportCredits).toBe(1);
+    expect((await b.deliver(completed)).status).toBe(200);
+    expect((await b.me(cookie)).exportCredits).toBe(1);
+  });
+
+  it('lets only one of two exports at once use the last bought export', async () => {
+    const b = billing();
+    const { cookie, sku } = await b.producerWithSku();
+    await b.pay(await b.checkout(cookie, { product: 'export' }));
+    const account = await b.me(cookie);
+    const statuses = await Promise.all(
+      [0, 1].map(async () => {
+        const res = await b.call('POST', `skus/${sku.id}/exports`, { edition: 'print' }, cookie);
+        return res.status;
+      }),
+    );
+    expect(statuses.sort()).toEqual([201, 402]);
+    expect((await b.me(cookie)).exportCredits).toBe(0);
+    const detail = await json(await b.call('GET', `skus/${sku.id}`, undefined, cookie));
+    expect(detail.exports).toHaveLength(1);
+    // The refused export's files were removed: storage holds the recorded export's four.
+    const stored = await env.EXPORTS!.list({ prefix: `exports/${account.id}/` });
+    expect(stored.objects.map((o) => o.key.split('/')[2])).toEqual(
+      Array(4).fill(detail.exports[0].id),
+    );
+  });
+
+  it('asks Stripe for a live plan before a plan’s checkout, and expires plan checkouts', async () => {
+    const b = billing();
+    const { cookie } = await b.producerWithSku();
+    const url = await b.checkout(cookie, { product: 'producer' });
+    expect(b.fake.sessionFor(url.split('/').pop()!)!.expires_at).toBe(b.seconds() + 31 * 60);
+    // Paid in another tab; its webhook has not arrived yet.
+    expect(b.fake.complete(url.split('/').pop()!, 'pay')).not.toBeNull();
+    expect((await b.me(cookie)).plan).toBe('free');
+    const again = await b.call('POST', 'billing/checkout', { product: 'producer' }, cookie);
+    expect(again.status).toBe(409);
+    expect((await json(again)).error).toBe('already_subscribed');
+    expect(await b.me(cookie)).toMatchObject({ plan: 'producer', printReady: 'subscription' });
+    // A single export's checkout keeps Stripe's default lifetime.
+    const one = await b.checkout(cookie, { product: 'export' });
+    expect(b.fake.sessionFor(one.split('/').pop()!)!.expires_at).toBeNull();
   });
 
   it('exports without limit on the Producer plan, and follows its changes', async () => {

@@ -59,3 +59,10 @@ export const BEVERAGE_TYPES: readonly BeverageType[] = [
 
 /** Live preview resolution limits: device pixels per mm, and pixels per image. */
 export const PREVIEW_LIMITS = { minPxPerMm: 2, maxPxPerMm: 40, maxPixels: 4_000_000 } as const;
+
+/**
+ * Free preview files (decision D3) are pixels, never vector artwork, so the PREVIEW mark cannot be
+ * lifted off: the panel image and the proof's panels are drawn at 300 dpi, enough to check size
+ * and layout on paper.
+ */
+export const PREVIEW_EXPORT_PX_PER_MM = 300 / 25.4;

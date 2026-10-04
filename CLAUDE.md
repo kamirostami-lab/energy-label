@@ -9,7 +9,7 @@ responsible for compliance, and every screen must say so.
 
 | Session | Work                                                                                        | State              |
 | ------- | ------------------------------------------------------------------------------------------- | ------------------ |
-| 1       | Monorepo, `rules/fsanz-energy-statement.json`, `packages/panel` SVG builder, golden fixture | Done (rules 1.0.0) |
+| 1       | Monorepo, `rules/fsanz-energy-statement.json`, `packages/panel` SVG builder, golden fixture | Done (rules 1.1.0) |
 | 2       | PDF export with pdf-lib, outlined text, PDF/X-4 metadata; proof sheet                       | Done               |
 | 3       | SvelteKit generator, live preview, validation states, export bar; preview deploy            | Done (see Deploy)  |
 | 4       | D1 migrations, magic-link auth (Resend), SKU records, exports to R2                         | Done (see Deploy)  |
@@ -18,13 +18,16 @@ responsible for compliance, and every screen must say so.
 | 7       | Checklist from `rules/anz-label-elements.json`, tick record, CSV export                     |                    |
 | 8       | Accessibility pass, error copy, rate limiting, logging, production deploy                   |                    |
 
-**Rules status (1.0.0): all 23 rules verified.** 21 against the Code amendment (Gazette FSC 181,
-Amendment No. 241), the FSANZ guidance of February 2026 and the Wine Australia fact sheet v1.2;
-each source records the SHA-256 of the copy read and each rule a locator (section, clause or
-page). The two formula constants no regulatory source states, `ethanol_density_g_per_ml` (0.789)
-and `kj_per_cal` (4.184), were accepted by Komms-Haus as physical constants on 30 September 2026.
-Should a rule ever lose its verification, `pnpm rules:check --strict` fails and every
-`buildStatement` result carries a `RULES_UNVERIFIED` note.
+**Rules status (1.1.0): all 25 rules verified.** Against the Code amendment (Gazette FSC 181,
+Amendment No. 241), FSANZ's compilation of the Code (April 2026), the FSANZ guidance of February
+2026 and the Wine Australia fact sheet v1.2; each source records the SHA-256 of the copy read and
+each rule a locator (section, clause or page). `ethanol_density_g_per_ml` (0.789), which no
+regulatory source states, was accepted by Komms-Haus as a physical constant on 30 September 2026.
+Rules 1.1.0 (5 October 2026, after the repository audit) set `kj_per_cal` to the Code's 4.18
+(Schedule 11, S11—2(4)) in place of 4.184, and add `package_standard_drinks` (Standard 2.7.1—4)
+and `alcohol_energy_kj_per_g` (29, S11—2(2)). Should a rule ever lose its verification,
+`pnpm rules:check --strict` fails and every `buildStatement` result carries a `RULES_UNVERIFIED`
+note.
 
 The sources corrected Build Brief 01 in three places, now reflected in code and rules:
 
@@ -89,11 +92,16 @@ rules give byte-identical SVG.
   returned when computable, for the preview. Findings use the codes in `src/types.ts`; messages
   are user-facing copy.
 - **Formulas** (brief section 7) live in `src/compute.ts`; every constant comes from the rules file.
-- **Rounding** (`src/decimal.ts`) works on the decimal value, half up: 84.85 → 84.9, and a 30 L keg
-  at 5% is 118.35 → 118.4 standard drinks. Energy is reduced to at most three significant figures
-  and never gains trailing zeros (70.985 → 71, not 71.0). Standard drinks are accurate to one
-  decimal; whole numbers drop the ".0" as in the FSANZ example (`standard_drinks_trim_trailing_zero`),
-  and exactly 1 takes the singular "standard drink".
+- **Rounding** (`src/decimal.ts`) works on the decimal value, half up: 84.85 → 84.9, and 39.45 →
+  39.5. Energy is reduced to at most three significant figures and never gains trailing zeros
+  (12.04 → 12, not 12.0). Standard drinks per serving are accurate to one decimal; whole numbers
+  drop the ".0" as in the FSANZ example (`standard_drinks_trim_trailing_zero`), and exactly 1
+  takes the singular "standard drink". The reminder of standard drinks in the package (never in
+  the panel) follows Standard 2.7.1—4(2): one decimal place up to 10, the nearest whole number
+  above (a 30 L keg at 5% is 118.35 → 118), and none at 0.5% ABV or less.
+- **Energy plausibility**: alcohol alone gives ABV × 0.789 × 29 kJ per 100 mL, so a kJ value more
+  than 3% below that is flagged `ENERGY_BELOW_ALCOHOL` (a warning): usually a per-serving or Cal
+  figure typed into the kJ per 100 mL field. The generator never calculates energy itself.
 - **Layout** (`src/layout.ts`) follows the prescribed format (Standard 2.7.1—4B(3)): a bordered
   box, heading centred and not bold, servings and serving-size lines, a rule, the column
   headings, a rule, the Energy row; no rule under the heading, no rules between columns. "kJ
@@ -119,6 +127,10 @@ byte.
 - **Formats**: `svg` (the `buildStatement` SVG), `pdf` (PDF 1.6 prepared to PDF/X-4 rules) and
   `pdf14` (PDF 1.4, for workflows that ask for EPS). The page is the panel: MediaBox, TrimBox and
   BleedBox all equal its bounds, so a 35 mm panel is 99.2126 pt wide.
+- **Free previews are pixels only** (decision D3): `exportPreviewImage` gives a 300 dpi greyscale
+  PNG with the PREVIEW mark burned in, and a preview proof (`{ watermark: true }`) draws both
+  panels as 300 dpi images. Vector artwork is never watermarked, so there is no mark to delete
+  and no vector panel to lift out of a free file.
 - **No fonts, same geometry as the SVG.** `src/pdf.ts` writes the content streams itself; pdf-lib
   only assembles the document, because its drawing API adds font resources. One matrix maps
   layout millimetres (y down) to points (y up), so the PDF paths carry the SVG's exact numbers,
@@ -155,10 +167,12 @@ loads the rules loader or the renderer.
   greyscale PNG with the PREVIEW mark burned in, rendered at the screen's density
   (`src/raster.ts`: exact-area anti-aliasing, non-zero winding). The image is shown at true size
   in CSS millimetres beside a millimetre ruler, at 1×, 2× or 4×.
-- **Free tier (D3)**: `POST /api/export` returns a watermarked SVG, PDF, PDF 1.4 and proof sheet,
-  once per browser (cookie `ep_free_export`, HttpOnly), to visitors who are not signed in. Signed
-  in, the export goes through the account instead (see accounts), and print-ready files are bought
-  (see billing).
+- **Free tier (D3)**: `POST /api/export` returns the watermarked PNG and preview proof, once per
+  browser (cookie `ep_free_export`, HttpOnly), to visitors who are not signed in, and at most 3 a
+  minute per IP (the `FREE_EXPORT_LIMIT` rate-limit binding; not on localhost). The files exist
+  only in the page, so it offers them as one zip and asks before the visitor leaves without them.
+  Signed in, the export goes through the account instead (see accounts), and print-ready files
+  are bought (see billing).
 - **Validation states** come from the panel's findings: field messages appear once a field has
   been left (or an export tried), and the Checks list shows everything that blocks, warns or notes.
 - **API hygiene**: JSON only (415 otherwise), cross-site `Origin` refused, 16 KB body limit,
@@ -187,13 +201,15 @@ loads the rules loader or the renderer.
   designer or printer can work for several producers; the account's organisation fills it in for
   new SKUs. Every query takes the account id, so no account reaches another's rows. The generator
   saves SKUs and opens them from the list at `/?sku=<id>`.
-- **Exports**: exporting a signed-in SKU saves it first, renders the four files as the free preview
-  export does, stores them in R2 under `exports/<account>/<export>/<file name>` and writes an
-  `exports` row: inputs, resolved options, names, rules version, issue date and output hash. The
-  output hash is SHA-256 over each file's name and SHA-256; `replayExport(record, rules)` renders
-  a record again and must reproduce it (brief section 9). An account has one free watermarked
-  export (D3), claimed atomically and handed back if the export fails; print-ready exports are
-  paid for (see billing).
+- **Exports**: exporting a signed-in SKU saves it first, renders its files (print-ready: SVG, PDF,
+  PDF 1.4 and proof; preview: PNG and proof), stores them in R2 under
+  `exports/<account>/<export>/<file name>` and writes an `exports` row: inputs, resolved options,
+  names, rules version, issue date and output hash. The output hash is SHA-256 over each file's
+  name and SHA-256; `replayExport(record, rules)` renders a record again and must reproduce it
+  (brief section 9). An account has one free watermarked export (D3); print-ready exports are
+  paid for (see billing). What pays is checked first and spent only in the D1 batch that writes
+  the row (`commitExport`), so a failed export costs nothing, two at once cannot both use the last
+  credit, and the files of an export that was not recorded are deleted.
 - **SKU list** (`/skus`, brief section 8): each SKU's last export date and rules version, with CSV
   downloads of the list (`/api/skus.csv`) and of every export (`/api/exports.csv`). Text cells a
   spreadsheet would read as a formula are prefixed with an apostrophe. Checklist completion joins
@@ -207,7 +223,7 @@ loads the rules loader or the renderer.
   included. Amounts live in Stripe on prices found by lookup key (`energy_panel_export`,
   `energy_panel_producer_monthly`, `energy_panel_printer_monthly`); `GET /api/billing` shows them
   as Stripe has them, and nothing is for sale while a price is missing.
-- **Stripe** (`src/billing/stripe.ts`): six REST calls through fetch, pinned to API version
+- **Stripe** (`src/billing/stripe.ts`): seven REST calls through fetch, pinned to API version
   `2026-09-30.endive`, no SDK. A subscription's period is read from its first item (the API moved
   it there in 2025). Checkout is hosted by Stripe; payment methods come from the dashboard, since
   the pinned version takes no `payment_method_types`. A single export asks Checkout for a tax
@@ -216,17 +232,21 @@ loads the rules loader or the renderer.
 - **Checkout** (`POST /api/billing/checkout`): signed in only. One Stripe customer per account
   (idempotency key per account). A single export bought from the generator returns to its SKU
   (`/?sku=…&checkout=complete`); a plan returns to `/billing`. The page waits for the webhook,
-  which can trail the redirect by seconds.
+  which can trail the redirect by seconds, and offers nothing more to buy meanwhile. Before a
+  plan's checkout the account's subscriptions are read from Stripe, so a plan paid in another tab
+  is found before its webhook arrives; a plan's session expires after 31 minutes.
 - **Webhook** (`POST /api/stripe/webhook`): the raw body's `Stripe-Signature` is checked (HMAC-SHA256,
   five minutes' tolerance, constant-time) before anything is read. Each event names an object that
   is fetched from Stripe again, so a late or repeated event acts on the current state. A paid
-  Checkout Session is recorded once in `purchases` (keyed by session), which grants one credit;
-  subscription events set `accounts.plan` and the status, period end and cancellation. News about
-  an earlier subscription never undoes the current one. Handled event ids are kept in
+  Checkout Session is recorded once in `purchases` (keyed by session); a single export's credit is
+  granted in the same D1 batch and marked by `credited_at`, so a failure leaves neither and
+  Stripe's retry grants it. Subscription events set `accounts.plan` and the status, period end and
+  cancellation. News about an earlier subscription never undoes the current one; a second live
+  plan on one account is logged as `stripe_second_subscription`. Handled event ids are kept in
   `stripe_events`. Body limit 512 KB here, 16 KB elsewhere.
 - **Entitlements** (`src/billing/entitlements.ts`): a print-ready export (`edition: "print"`) is paid
-  for by an active, trialing or past-due plan, or by one credit, used atomically and handed back if
-  the export fails; otherwise 402. A plan whose period ended more than two days ago without news is
+  for by an active, trialing or past-due plan, or by one credit, spent with the export row (see
+  accounts); otherwise 402. A plan whose period ended more than two days ago without news is
   checked with Stripe before refusing. Each export records its `entitlement` (free, credit,
   subscription), also in the export CSV.
 - **Portal** (`POST /api/billing/portal`): Stripe's Customer Portal for changing or cancelling the
@@ -256,7 +276,11 @@ Preview command    npx wrangler d1 migrations apply DB --remote --config wrangle
   Migrations are tracked in each database's `d1_migrations` table and applied on every deploy,
   which needs the Workers Builds API token to carry **D1 Edit**.
 - **R2**: buckets `energy-panel-exports` and `energy-panel-exports-preview`. R2 must be enabled on
-  the account and both buckets must exist before a deploy, or `wrangler deploy` fails.
+  the account and both buckets must exist before a deploy, or `wrangler deploy` fails. As of
+  4 October 2026 R2 was not enabled, both D1 databases had no tables, and the Workers Builds of
+  `main` (3c9ced8, 097cc14) had failed: production does not yet run sessions 4 and 5.
+- **Rate limiting**: the `ratelimits` binding `FREE_EXPORT_LIMIT` (namespace 1001) needs no setup
+  beyond the deploy.
 - **Mail**: `RESEND_API_KEY` as a secret (dashboard or `wrangler secret put`). `MAIL_FROM` goes in
   `vars` in `wrangler.jsonc` once the sender is decided (D10), because a deploy replaces
   variables set only in the dashboard; the sending domain must be verified in Resend.
@@ -320,13 +344,11 @@ Defaults apply until Kami records otherwise.
   invoice it creates for a single export.
 - Print-ready exports follow the PDF/X-4 rules but claim nothing until D7 is decided.
 - Sign-in requests are limited per address (5 an hour) but not yet per IP; that and the other
-  rate limits belong to session 8.
+  rate limits belong to session 8. The free export has a per-IP burst limit (3 a minute), not a
+  daily one, and no Turnstile; with its files pixels only, it no longer protects paid exports.
 - Deleting a SKU or an account is not offered yet, and stored export files have no retention
   period; both are needed before production.
 - Beverage presets set the package word; "can" for beer and cider is a guess to confirm.
-- In the free preview exports' SVG and PDFs the PREVIEW mark is a separate path, so a designer
-  can delete it; the one-per-browser and one-per-account limits are what protect paid exports.
-  The live preview has no such gap: it is a PNG with the mark burned in.
 - D7 needs a printing condition and a CMYK ICC profile licensed for embedding (printer profiles
   could supply their own from session 6). Once chosen, run an X-4 export through a preflight
   such as Acrobat or callas pdfToolbox; the tests only use a stand-in profile.

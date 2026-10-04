@@ -35,6 +35,11 @@ describe('rules/fsanz-energy-statement.json', () => {
     });
     expect(v.standard_drinks_trim_trailing_zero).toBe(true);
     expect(v.existing_duties).toEqual(['the approximate number of standard drinks in the package']);
+    expect(v.package_standard_drinks).toEqual({
+      required_above_abv_percent: 0.5,
+      decimal_places: 1,
+      whole_number_above: 10,
+    });
     expect(v.min_type_size).toBeNull();
     expect(v.max_significant_figures).toBe(3);
     expect(v.standard_drinks_decimal_places).toBe(1);
@@ -52,7 +57,8 @@ describe('rules/fsanz-energy-statement.json', () => {
     expect(v.exemptions.find((e) => e.code === 'small_package')?.max_surface_area_cm2).toBe(100);
     expect(v.standard_drink_ethanol_g).toBe(10);
     expect(v.ethanol_density_g_per_ml).toBe(0.789);
-    expect(v.kj_per_cal).toBe(4.184);
+    expect(v.alcohol_energy_kj_per_g).toBe(29);
+    expect(v.kj_per_cal).toBe(4.18);
     expect(v.min_rule_weight_pt).toBe(0.25);
   });
 
@@ -67,7 +73,7 @@ describe('rules/fsanz-energy-statement.json', () => {
 
   it('has every rule verified', () => {
     const rules = loadFsanzEnergyStatementRules();
-    expect(rules.version).toBe('1.0.0');
+    expect(rules.version).toBe('1.1.0');
     expect(listUnverified(rules)).toEqual([]);
   });
 

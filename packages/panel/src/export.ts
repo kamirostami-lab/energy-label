@@ -1,11 +1,14 @@
 // Export functions: artwork as SVG, PDF (PDF/X-4 rules) or EPS-compatible PDF 1.4, named by the
-// studio convention YYYYMMDD-<org>-<sku>-energy-panel-<width>mm.<ext>.
+// studio convention YYYYMMDD-<org>-<sku>-energy-panel-<width>mm.<ext>. The free preview's panel is
+// a PNG with the PREVIEW mark burned in: vector artwork is only ever exported without it.
 import type { EnergyStatementRules } from '@energy-panel/rules';
-import { describePanel, planStatement } from './build-statement.ts';
+import { planStatement } from './build-statement.ts';
 import { utf8 } from './bytes.ts';
 import { formatUpTo } from './decimal.ts';
 import { issueDate, renderPanelPdf, type OutputIntent } from './pdf.ts';
-import { renderSvg } from './svg.ts';
+import { encodeGreyPng } from './png.ts';
+import { previewScale, rasterizePanel } from './raster.ts';
+import { PREVIEW_EXPORT_PX_PER_MM } from './settings.ts';
 import type { ColourVariant, Finding, StatementInputs, StatementOptions } from './types.ts';
 
 /** svg; pdf (PDF 1.6 to PDF/X-4 rules); pdf14 (the EPS-compatible PDF 1.4). */
@@ -20,9 +23,10 @@ export interface ExportRequest {
   sku: string;
   /** pdf only: the printing condition to declare, making the file PDF/X-4. */
   outputIntent?: OutputIntent;
-  /** A free preview export (decision D3): sets the PREVIEW mark and names the file "-preview". */
-  watermark?: boolean;
 }
+
+/** What names a free preview file: the issue date, organisation and product. */
+export type PreviewRequest = Pick<ExportRequest, 'issuedOn' | 'org' | 'sku'>;
 
 export interface ExportedFile {
   fileName: string;
@@ -89,42 +93,60 @@ export async function exportArtwork(
   rules: EnergyStatementRules,
   request: ExportRequest,
 ): Promise<ExportedFile> {
-  const { result, layout, content } = planStatement(inputs, options, rules);
-  if (!result.exportable || !result.svg || !layout || !content || !result.options) {
+  const { result, layout } = planStatement(inputs, options, rules);
+  if (!result.exportable || !result.svg || !layout || !result.options) {
     throw new ExportBlockedError(result.warnings.filter((w) => w.severity === 'block'));
   }
   const { colour, width_mm } = result.options;
-  const watermark = request.watermark === true;
   const fileName = exportFileName({
     issuedOn: request.issuedOn,
     org: request.org,
     sku: request.sku,
     widthMm: width_mm,
     ext: request.format === 'svg' ? 'svg' : 'pdf',
-    suffixes: [...variantSuffixes(colour, request.format), ...(watermark ? ['preview'] : [])],
+    suffixes: variantSuffixes(colour, request.format),
   });
   if (request.format === 'svg') {
-    const svg = watermark
-      ? renderSvg(layout, colour, {
-          title: content.title,
-          description: describePanel(content),
-          rulesVersion: rules.version,
-          watermark,
-        })
-      : result.svg;
-    return { fileName, mediaType: 'image/svg+xml', bytes: utf8(svg) };
+    return { fileName, mediaType: 'image/svg+xml', bytes: utf8(result.svg) };
   }
   const bytes = await renderPanelPdf(
     layout,
     colour,
     request.format === 'pdf14' ? 'pdf14' : 'pdfx4',
     {
-      title: `${watermark ? 'Energy statement preview' : 'Energy statement'}: ${request.sku}`,
+      title: `Energy statement: ${request.sku}`,
       rulesVersion: rules.version,
       issuedOn: request.issuedOn,
-      watermark,
       ...(request.outputIntent ? { outputIntent: request.outputIntent } : {}),
     },
   );
   return { fileName, mediaType: 'application/pdf', bytes };
+}
+
+/**
+ * The free preview's image of the panel (decision D3): greyscale PNG at 300 dpi with the PREVIEW
+ * mark burned in, named "-preview". Throws ExportBlockedError like exportArtwork.
+ */
+export function exportPreviewImage(
+  inputs: StatementInputs,
+  options: StatementOptions,
+  rules: EnergyStatementRules,
+  request: PreviewRequest,
+): ExportedFile {
+  const { result, layout } = planStatement(inputs, options, rules);
+  if (!result.exportable || !layout || !result.options) {
+    throw new ExportBlockedError(result.warnings.filter((w) => w.severity === 'block'));
+  }
+  const { colour, width_mm } = result.options;
+  const pxPerMm = previewScale(layout, PREVIEW_EXPORT_PX_PER_MM);
+  const fileName = exportFileName({
+    issuedOn: request.issuedOn,
+    org: request.org,
+    sku: request.sku,
+    widthMm: width_mm,
+    ext: 'png',
+    suffixes: [...variantSuffixes(colour, 'svg'), 'preview'],
+  });
+  const bytes = encodeGreyPng(rasterizePanel(layout, colour, pxPerMm), pxPerMm);
+  return { fileName, mediaType: 'image/png', bytes };
 }

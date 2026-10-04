@@ -4,10 +4,11 @@
 import { PDFDocument, PDFHexString, PDFName, PDFString, type PDFContext } from 'pdf-lib';
 import { fingerprint, utf8 } from './bytes.ts';
 import { FONT, rectCommands, type PanelLayout } from './layout.ts';
+import { crc32 } from './png.ts';
+import type { GreyImage } from './raster.ts';
 import { SPOT_COLOUR_NAME } from './svg.ts';
 import { fmt, outlineCommands, type PathCommand } from './text.ts';
 import type { ColourVariant } from './types.ts';
-import { WATERMARK_TINT, watermarkCommands } from './watermark.ts';
 
 export const PT_PER_MM = 72 / 25.4;
 /** 72 / 25.4 to nine decimals: under 1e-7 pt of error across a 120 mm panel. */
@@ -36,8 +37,6 @@ export interface PdfMeta {
   issuedOn: string;
   /** PDF/X-4 flavour only. Without it the file follows X-4 rules but does not claim conformance. */
   outputIntent?: OutputIntent;
-  /** Sets the PREVIEW mark behind the panel (free preview exports). */
-  watermark?: boolean;
 }
 
 /** Points to four decimals. */
@@ -71,9 +70,16 @@ export function panelPaths(layout: PanelLayout): string {
   return paths.map((path) => `${pdfPathOps(path)}\nf`).join('\n');
 }
 
-/** The PREVIEW mark as fill operators in layout millimetres, in a CMYK grey under the artwork. */
-export function watermarkOps(layout: PanelLayout, colour: ColourVariant): string {
-  return `0 0 0 ${num(WATERMARK_TINT[colour])} k\n${pdfPathOps(watermarkCommands(layout))}\nf`;
+/** Draws the page image `name` with its top-left corner at (x, y), `width` × `height` mm. */
+export function imageOps(
+  name: string,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+): string {
+  // The y-down page space flips the image's unit square, whose first row is at its top.
+  return `q\n${fmt(width)} 0 0 ${fmt(-height)} ${fmt(x)} ${fmt(y + height)} cm\n/${name} Do\nQ`;
 }
 
 /** Sets the fill colour: CMYK black 0/0/0/100, white 0/0/0/0, or 100% of the "Panel" spot. */
@@ -159,6 +165,8 @@ export interface PdfPage {
   content: string;
   /** Whether the content uses the "Panel" separation. */
   spot: boolean;
+  /** Greyscale images the content draws by name (imageOps): the panels of a preview proof. */
+  images?: ReadonlyArray<{ name: string; image: GreyImage }>;
 }
 
 export interface PdfDocumentInfo {
@@ -182,9 +190,28 @@ export async function writePdf(page: PdfPage, info: PdfDocumentInfo): Promise<Ui
   pdfPage.setBleedBox(0, 0, width, height);
 
   const content = `q\n${MM_TO_PT} 0 0 -${MM_TO_PT} 0 ${num(height)} cm\n${page.content}\nQ\n`;
+  const images = page.images ?? [];
+  const xObjects = Object.fromEntries(
+    images.map(({ name, image }) => [
+      name,
+      context.register(
+        context.flateStream(image.pixels, {
+          Type: 'XObject',
+          Subtype: 'Image',
+          Width: image.width,
+          Height: image.height,
+          ColorSpace: 'DeviceGray',
+          BitsPerComponent: 8,
+        }),
+      ),
+    ]),
+  );
   pdfPage.node.set(
     PDFName.of('Resources'),
-    context.obj(page.spot ? { ColorSpace: { [SPOT_COLOUR_NAME]: spotColourSpace(context) } } : {}),
+    context.obj({
+      ...(page.spot ? { ColorSpace: { [SPOT_COLOUR_NAME]: spotColourSpace(context) } } : {}),
+      ...(images.length > 0 ? { XObject: xObjects } : {}),
+    }),
   );
   pdfPage.node.set(PDFName.of('Contents'), context.register(context.flateStream(utf8(content))));
 
@@ -196,6 +223,9 @@ export async function writePdf(page: PdfPage, info: PdfDocumentInfo): Promise<Ui
       info.issuedOn,
       info.outputIntent?.identifier ?? '',
       content,
+      ...images.map(
+        ({ name, image }) => `${name} ${image.width}x${image.height} ${crc32(image.pixels)}`,
+      ),
     ].join('\n'),
   );
   context.trailerInfo.ID = context.obj([PDFHexString.of(id), PDFHexString.of(id)]);
@@ -269,13 +299,13 @@ export function renderPanelPdf(
     {
       widthMm: layout.width,
       heightMm: layout.height,
-      content: `${meta.watermark ? `${watermarkOps(layout, colour)}\n` : ''}${colourOps(colour)}\n${panelPaths(layout)}`,
+      content: `${colourOps(colour)}\n${panelPaths(layout)}`,
       spot: colour === 'spot',
     },
     {
       version: flavour === 'pdf14' ? '1.4' : '1.6',
       title: meta.title,
-      subject: `FSANZ energy statement, rules ${meta.rulesVersion}${meta.watermark ? '; watermarked preview, not for print' : ''}`,
+      subject: `FSANZ energy statement, rules ${meta.rulesVersion}`,
       issuedOn: meta.issuedOn,
       outputIntent: flavour === 'pdfx4' ? meta.outputIntent : undefined,
     },

@@ -12,7 +12,17 @@ import {
   type ExportedFile,
 } from './export.ts';
 import { FONT, wrapText, type PanelLayout } from './layout.ts';
-import { colourOps, issueDate, panelPaths, pdfPathOps, watermarkOps, writePdf } from './pdf.ts';
+import {
+  colourOps,
+  imageOps,
+  issueDate,
+  panelPaths,
+  pdfPathOps,
+  writePdf,
+  type PdfPage,
+} from './pdf.ts';
+import { previewScale, rasterizePanel } from './raster.ts';
+import { PREVIEW_EXPORT_PX_PER_MM } from './settings.ts';
 import { fmt, measureText, outlineCommands, unsupportedCharacters } from './text.ts';
 import type { ColourVariant, StatementInputs, StatementOptions, StatementResult } from './types.ts';
 
@@ -29,7 +39,10 @@ export interface ProofDetails {
 }
 
 export interface ProofOptions {
-  /** A free preview proof (decision D3): the panels carry the PREVIEW mark. */
+  /**
+   * A free preview proof (decision D3): the panels are 300 dpi images with the PREVIEW mark burned
+   * in, so no vector artwork can be lifted from the file.
+   */
   watermark?: boolean;
 }
 
@@ -142,7 +155,9 @@ function valueRows(inputs: StatementInputs, result: StatementResult): Array<[str
   }
   rows.push([
     'Standard drinks in the package',
-    `${d.totalStandardDrinks} (state this separately on the label, not in the energy statement)`,
+    d.totalStandardDrinks === null
+      ? 'Not required at this alcohol content'
+      : `${d.totalStandardDrinks} (state this separately on the label, not in the energy statement)`,
   ]);
   return rows;
 }
@@ -150,6 +165,7 @@ function valueRows(inputs: StatementInputs, result: StatementResult): Array<[str
 /** Collects outlined text and panels in page millimetres, y down. */
 class Sheet {
   readonly ops: string[] = [BLACK];
+  readonly images: NonNullable<PdfPage['images']>[number][] = [];
   y: number = PAGE.margin;
 
   text(text: string, size: number, x: number, baseline: number): void {
@@ -174,9 +190,16 @@ class Sheet {
         `0 0 0 0.8 k\n${fmt(PAGE.margin)} ${fmt(this.y)} ${fmt(w)} ${fmt(h)} re\nf\n${BLACK}`,
       );
     }
-    this.ops.push(
-      `q\n${fmt(scale)} 0 0 ${fmt(scale)} ${fmt(x)} ${fmt(y)} cm\n${watermark ? `${watermarkOps(layout, colour)}\n` : ''}${colourOps(colour)}\n${panelPaths(layout)}\nQ`,
-    );
+    if (watermark) {
+      const name = `Im${this.images.length}`;
+      const pxPerMm = previewScale(layout, PREVIEW_EXPORT_PX_PER_MM * scale);
+      this.images.push({ name, image: rasterizePanel(layout, colour, pxPerMm) });
+      this.ops.push(imageOps(name, x, y, layout.width * scale, layout.height * scale));
+    } else {
+      this.ops.push(
+        `q\n${fmt(scale)} 0 0 ${fmt(scale)} ${fmt(x)} ${fmt(y)} cm\n${colourOps(colour)}\n${panelPaths(layout)}\nQ`,
+      );
+    }
     this.y = y + layout.height * scale + (colour === 'white' ? 2 : 0);
   }
 }
@@ -261,7 +284,12 @@ export async function buildProofSheet(
     `${details.producer} · Issued ${longDate(details.issuedOn)} · Rules version ${rules.version}`,
     SIZE.body,
   );
-  if (watermark) sheet.lines('Watermarked preview: not for print.', SIZE.body);
+  if (watermark) {
+    sheet.lines(
+      'Watermarked preview: the panels are images, not artwork. Not for print.',
+      SIZE.body,
+    );
+  }
 
   sheet.y += GAP;
   sheet.lines(`Actual size: ${formatUpTo(width_mm, 1)} mm wide`, SIZE.small);
@@ -303,7 +331,9 @@ export async function buildProofSheet(
       widthMm: PAGE.width,
       heightMm: PAGE.height,
       content: sheet.ops.join('\n'),
-      spot: colour === 'spot',
+      // A preview's panels are images, so it uses no separation.
+      spot: colour === 'spot' && !watermark,
+      images: sheet.images,
     },
     {
       version: '1.6',
