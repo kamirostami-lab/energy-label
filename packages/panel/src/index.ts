@@ -9,12 +9,14 @@ export {
   ExportBlockedError,
   exportArtwork,
   exportFileName,
+  exportPreviewImage,
   slug,
   variantSuffixes,
   type ArtworkFormat,
   type ExportRequest,
   type ExportedFile,
   type FileNameParts,
+  type PreviewRequest,
 } from './export.ts';
 export {
   PT_PER_MM,
@@ -30,7 +32,7 @@ export {
   type ProofDetails,
   type ProofOptions,
 } from './proof.ts';
-export { computeValues, standardDrinks } from './compute.ts';
+export { computeValues, packageStandardDrinks, standardDrinks } from './compute.ts';
 export {
   countSignificantFigures,
   formatFixed,
@@ -46,11 +48,12 @@ export { renderPreviewPng, type PreviewImage } from './preview.ts';
 export { previewScale, rasterizePanel, type GreyImage } from './raster.ts';
 export {
   BEVERAGE_TYPES,
+  PREVIEW_EXPORT_PX_PER_MM,
   PREVIEW_LIMITS,
   type BeverageType,
   type BeverageTypeId,
 } from './settings.ts';
-export { WATERMARK_TEXT, WATERMARK_TINT, watermarkCommands, watermarkHex } from './watermark.ts';
+export { WATERMARK_TEXT, WATERMARK_TINT, watermarkCommands } from './watermark.ts';
 export {
   COLOUR_VARIANTS,
   ENERGY_UNITS,

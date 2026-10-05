@@ -1,6 +1,6 @@
 {
   "rules_id": "fsanz-energy-statement",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "title": "FSANZ energy statement for packaged alcoholic beverages",
   "jurisdictions": ["AU", "NZ"],
   "versions": [
@@ -18,6 +18,11 @@
       "version": "1.0.0",
       "date": "2026-09-30",
       "notes": "Komms-Haus accepted ethanol_density_g_per_ml (0.789 g/mL, ethanol at 20 °C) and kj_per_cal (4.184 kJ per kilocalorie) as physical constants on 30 September 2026. Neither is stated in the Code amendment, the FSANZ guidance or the Wine Australia fact sheet. Every rule is now verified."
+    },
+    {
+      "version": "1.1.0",
+      "date": "2026-10-05",
+      "notes": "Checked against the FSANZ compilation of the Code (April 2026), after the repository audit of 4 October 2026. kj_per_cal becomes 4.18: Amendment No. 241 defines average energy content by reference to section S11—2, whose subsection (4) converts kilojoules to kilocalories by dividing by 4.18. The physical constant 4.184, accepted on 30 September 2026, is retired. Added package_standard_drinks: the separate statement of standard drinks in the package is required only above 0.5% ABV and is shown to one decimal place up to 10 and to the nearest whole number above 10 (Standard 2.7.1—4(1) and (2)). Added alcohol_energy_kj_per_g (29 kJ/g, S11—2(2)) for the check that the energy entered is not below what the alcohol alone provides."
     }
   ],
   "sources": {
@@ -41,6 +46,14 @@
       "kind": "legislation",
       "sha256": "ca02095e139342680f703c80d57cccc3e4c1c74f8ed226cccc5740563bb834aa",
       "notes": "Read from a copy supplied by Komms-Haus (Amendment_No.241_0.pdf). The same amendment is notified in the New Zealand Gazette (https://gazette.govt.nz/notice/id/2025-gs4358, not reviewed) and registered on the Federal Register of Legislation. Locators cite the Code sections the variation inserts."
+    },
+    "fsanz_code_compilation_2026_04": {
+      "title": "Australia New Zealand Food Standards Code: compilation of the Code (April 2026)",
+      "publisher": "Food Standards Australia New Zealand",
+      "url": "https://www.foodstandards.gov.au/sites/default/files/2026-04/Food%20Standards%20Code%20-%20Compilation%20(April%202026).pdf",
+      "kind": "legislation",
+      "sha256": "bb0a8939ce602a0012c281c83b09d4005b4cae0a4cc674b0c3196df5a15fe218",
+      "notes": "Downloaded from FSANZ on 5 October 2026. It reproduces Standard 2.7.1 as compilation No. 4 (in force on 13 August 2025, including Amendment No. 241) and Schedule 11 as compiled on 29 October 2024 (Authorised Version F2024C01138). Page numbers are those of the PDF."
     },
     "fsanz_guidance_2026_02": {
       "title": "Energy labelling on alcoholic beverages: guidance for producers, importers, suppliers, distributors and retailers (February 2026)",
@@ -247,6 +260,17 @@
       "notes": "The separate statement of standard drinks in the package must still appear elsewhere on the label, and must not appear inside the energy statement (2.7.1—4(1A)). Shown to the user as a reminder, never inside the panel. Build Brief 01 also listed alcohol content; none of these sources mentions it, so it is not included.",
       "verified_at": "2026-09-30"
     },
+    "package_standard_drinks": {
+      "value": {
+        "required_above_abv_percent": 0.5,
+        "decimal_places": 1,
+        "whole_number_above": 10
+      },
+      "sources": ["fsanz_code_compilation_2026_04"],
+      "locator": "Standard 2.7.1—4(1)(b) and 2.7.1—4(2) (compilation p. 224)",
+      "notes": "The separate statement of standard drinks in the package (see existing_duties) is required for a beverage containing more than 0.5% alcohol by volume: exclusive, unlike the energy statement's inclusive 0.5% (min_abv_percent). It must be accurate to the first decimal place for 10 or fewer standard drinks, and to the nearest whole number above 10.",
+      "verified_at": "2026-10-05"
+    },
     "standard_drink_ethanol_g": {
       "value": 10,
       "sources": ["wine_australia_energy_fact_sheet", "brief_01"],
@@ -260,11 +284,19 @@
       "notes": "Density of ethanol at 20 °C, the temperature at which the Code measures standard drinks (see standard_drink_ethanol_g). Accepted by Komms-Haus as a physical constant; none of the regulatory sources on file states it.",
       "verified_at": "2026-09-30"
     },
+    "alcohol_energy_kj_per_g": {
+      "value": 29,
+      "sources": ["fsanz_code_compilation_2026_04"],
+      "locator": "Schedule 11, section S11—2(2), energy factors for general components: alcohol 29 kJ/g (compilation p. 554)",
+      "notes": "The energy alcohol alone provides. Used only to warn when the energy entered is below that floor for the ABV, which suggests a value per serving or in Cal was typed into the kJ per 100 mL field. The generator never calculates energy itself.",
+      "verified_at": "2026-10-05"
+    },
     "kj_per_cal": {
-      "value": 4.184,
-      "sources": ["brief_01", "komms_haus_decision_2026_09_30"],
-      "notes": "Cal = kJ / 4.184: one kilocalorie is 4.184 kJ. Accepted by Komms-Haus as a physical constant; none of the regulatory sources on file states it.",
-      "verified_at": "2026-09-30"
+      "value": 4.18,
+      "sources": ["fsanz_code_compilation_2026_04", "code_amendment_241"],
+      "locator": "Schedule 11, section S11—2(4), AE(C) = AE(kJ) ÷ 4.18 (compilation p. 555); Standard 2.7.1—2, definition of average energy content (Amendment No. 241)",
+      "notes": "Cal = kJ / 4.18. S11—2(4) states the conversion for Standard 1.2.8 nutrition information panels; it is the only one the Code gives, and the energy statement's average energy content is defined by reference to S11—2. Replaces the physical constant 4.184 accepted on 30 September 2026.",
+      "verified_at": "2026-10-05"
     },
     "servings_decimal_places": {
       "value": 1,

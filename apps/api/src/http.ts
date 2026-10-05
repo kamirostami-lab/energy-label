@@ -49,6 +49,19 @@ export async function readBody<T extends z.ZodType>(
 export const isLocalhost = (url: string) =>
   ['localhost', '127.0.0.1', '[::1]'].includes(new URL(url).hostname);
 
+/**
+ * True when a per-IP rate limit refuses this request. Without the binding (tests, previews that
+ * lack it), the client address, or on localhost, nothing is limited.
+ */
+export async function overLimit(
+  c: Context,
+  limiter: { limit(options: { key: string }): Promise<{ success: boolean }> } | undefined,
+): Promise<boolean> {
+  const ip = c.req.header('cf-connecting-ip');
+  if (!limiter || !ip || isLocalhost(c.req.url)) return false;
+  return !(await limiter.limit({ key: ip })).success;
+}
+
 /** Rejects cross-site requests: a browser sends Origin with every POST. */
 export function crossSite(c: Context): boolean {
   const origin = c.req.header('origin');

@@ -54,7 +54,8 @@ test('completes the generate flow with the keyboard only', async ({ page }) => {
     /Serving size: 60 mL \(1 standard drink\)\. .*Average quantity per serving: 355 kJ\./,
   );
   await expect(status(page)).toHaveText('Ready to export.');
-  await expect(page.getByText('Standard drinks in the package: 12.0.')).toBeVisible();
+  // 11.99 standard drinks: more than 10, so the nearest whole number (Standard 2.7.1—4(2)).
+  await expect(page.getByText('Standard drinks in the package: 12.')).toBeVisible();
 
   await tabTo(page, '#producer');
   await page.keyboard.type('Komms-Haus');
@@ -66,14 +67,13 @@ test('completes the generate flow with the keyboard only', async ({ page }) => {
   const heading = page.getByRole('heading', { name: 'Your preview files' });
   await expect(heading).toBeFocused();
   const links = page.locator('ul.files a');
-  await expect(links).toHaveCount(4);
+  await expect(links).toHaveCount(2);
   const names = await links.allTextContents();
   const stem = /^\d{8}-komms-haus-fsanz-example-energy-panel-50mm/;
   expect(names.every((name) => stem.test(name))).toBe(true);
+  // Pixels only: no vector artwork to take the PREVIEW mark off.
   expect(names.map((name) => name.replace(stem, ''))).toEqual([
-    '-preview.svg',
-    '-preview.pdf',
-    '-pdf14-preview.pdf',
+    '-preview.png',
     '-proof-preview.pdf',
   ]);
 
@@ -84,7 +84,40 @@ test('completes the generate flow with the keyboard only', async ({ page }) => {
       await page.keyboard.press('Enter');
     })(),
   ]);
-  expect(download.suggestedFilename()).toMatch(/-preview\.svg$/);
+  expect(download.suggestedFilename()).toMatch(/-preview\.png$/);
+});
+
+test('asks before leaving the free files behind, and offers them in one download', async ({
+  page,
+}) => {
+  await enterFsanzExample(page);
+  await page.getByLabel('Producer').fill('Komms-Haus');
+  await page.getByLabel('Product', { exact: true }).fill('FSANZ example');
+  await page.getByRole('button', { name: 'Export free preview files' }).click();
+  await expect(page.locator('ul.files a')).toHaveCount(2);
+
+  // Leaving is questioned, and staying keeps the files.
+  const asked: string[] = [];
+  page.once('dialog', async (dialog) => {
+    asked.push(dialog.message());
+    await dialog.dismiss();
+  });
+  await page.getByRole('link', { name: 'Plans' }).click();
+  await expect.poll(() => asked).toHaveLength(1);
+  expect(asked[0]).toContain('not kept after you leave this page');
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.locator('ul.files a')).toHaveCount(2);
+
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByRole('link', { name: 'Download both (.zip)' }).click(),
+  ]);
+  expect(download.suggestedFilename()).toMatch(
+    /^\d{8}-komms-haus-fsanz-example-energy-panel-50mm-preview\.zip$/,
+  );
+  // Once downloaded, the page lets its visitor go without asking.
+  await page.getByRole('link', { name: 'Plans' }).click();
+  await expect(page).toHaveURL(/\/billing$/);
 });
 
 test('blocks export below 0.5% ABV until the beverage type is confirmed', async ({ page }) => {
@@ -125,8 +158,10 @@ test('allows one free preview export per browser', async ({ page }) => {
   await page.getByLabel('Producer').fill('Komms-Haus');
   await page.getByLabel('Product', { exact: true }).fill('FSANZ example');
   await page.getByRole('button', { name: 'Export free preview files' }).click();
-  await expect(page.locator('ul.files a')).toHaveCount(4);
+  await expect(page.locator('ul.files a')).toHaveCount(2);
 
+  // The files were not downloaded, so the browser asks before the reload.
+  page.once('dialog', (dialog) => dialog.accept());
   await page.reload();
   await expect(page.getByText('This browser has used its free preview export.')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Export free preview files' })).toHaveCount(0);
@@ -165,7 +200,7 @@ test('exports the values on screen even when clicked straight after typing', asy
   // The last value goes in and the button is pressed before the preview has caught up.
   await page.getByLabel('Average energy kJ per 100 mL').fill('316');
   await page.getByRole('button', { name: 'Export free preview files' }).click();
-  await expect(page.locator('ul.files a')).toHaveCount(4);
+  await expect(page.locator('ul.files a')).toHaveCount(2);
 });
 
 test('refuses a blocked statement at export and points to the checks', async ({ page }) => {

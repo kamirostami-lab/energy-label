@@ -68,6 +68,7 @@ export type FindingCode =
   | 'SERVINGS_OVERRIDE_DIFFERS'
   | 'STANDARD_DRINKS_ROUND_TO_ZERO'
   | 'CAL_MISMATCH'
+  | 'ENERGY_BELOW_ALCOHOL'
   | 'RULES_UNVERIFIED';
 
 export interface Finding {
@@ -96,8 +97,11 @@ export interface StatementValues {
     energyPer100mlKj: string;
     energyPerServingCal: string | null;
     energyPer100mlCal: string | null;
-    /** For the reminder line outside the panel; never drawn inside it. */
-    totalStandardDrinks: string;
+    /**
+     * Standard drinks in the package, for the reminder line outside the panel; never drawn inside
+     * it. Null when no statement is required (0.5% ABV or less).
+     */
+    totalStandardDrinks: string | null;
   };
 }
 

@@ -17,6 +17,7 @@ interface FakeSession extends StripeCheckoutSession {
   price: string;
   success_url: string;
   cancel_url: string;
+  expires_at: number | null;
 }
 
 export interface FakeStripe extends Stripe {
@@ -90,6 +91,7 @@ export function createFakeStripe(
         price: r.price,
         success_url: r.successUrl,
         cancel_url: r.cancelUrl,
+        expires_at: r.expiresAt ?? null,
       };
       session.url = `${new URL(r.successUrl).origin}/api/dev/stripe/checkout/${session.id}`;
       sessions.set(session.id, session);
@@ -105,6 +107,12 @@ export function createFakeStripe(
       if (!subscription) throw new Error('No such subscription');
       return structuredClone(subscription);
     },
+    async subscriptions(customer) {
+      return [...subscriptions.values()]
+        .filter((s) => s.customer === customer)
+        .reverse()
+        .map((s) => structuredClone(s));
+    },
     async createPortalSession(customer, returnUrl) {
       const origin = new URL(returnUrl).origin;
       return {
@@ -115,6 +123,10 @@ export function createFakeStripe(
     complete(sessionId, outcome) {
       const session = sessions.get(sessionId);
       if (!session || session.status !== 'open') return null;
+      if (session.expires_at !== null && now() >= session.expires_at) {
+        session.status = 'expired';
+        return null;
+      }
       if (outcome === 'cancel') {
         return { redirect: session.cancel_url, events: [] };
       }

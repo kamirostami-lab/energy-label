@@ -12,6 +12,23 @@ export function standardDrinks(volumeMl: number, abv: number, rules: EnergyState
   return (volumeMl * (abv / 100) * density) / grams;
 }
 
+/**
+ * The separate statement of standard drinks in the package (Standard 2.7.1—4): required only
+ * above the ABV threshold, to the first decimal place up to 10 and the nearest whole number above.
+ */
+export function packageStandardDrinks(
+  total: number,
+  abv: number,
+  rules: EnergyStatementRules,
+): string | null {
+  const rule = rules.values.package_standard_drinks;
+  if (abv <= rule.required_above_abv_percent) return null;
+  // Compared on the decimal value, so binary noise cannot push exactly 10 over the threshold.
+  return Number(formatSignificant(total, 15)) > rule.whole_number_above
+    ? formatUpTo(total, 0)
+    : formatFixed(total, rule.decimal_places);
+}
+
 export function computeValues(
   inputs: ComputableInputs,
   options: ResolvedOptions,
@@ -54,7 +71,7 @@ export function computeValues(
       energyPer100mlKj: formatSignificant(energyPer100mlKj, figures),
       energyPerServingCal: sig(energyPerServingCal),
       energyPer100mlCal: sig(energyPer100mlCal),
-      totalStandardDrinks: formatFixed(totalStandardDrinks, v.standard_drinks_decimal_places),
+      totalStandardDrinks: packageStandardDrinks(totalStandardDrinks, inputs.abv, rules),
     },
   };
 }

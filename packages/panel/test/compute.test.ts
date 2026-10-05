@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { buildStatement, formatFixed, standardDrinks } from '../src/index.ts';
+import {
+  buildStatement,
+  formatFixed,
+  packageStandardDrinks,
+  standardDrinks,
+} from '../src/index.ts';
 import { defaultOptions, fsanzInputs, rules, rulesWith } from './helpers.ts';
 
 // Acceptance criterion: 20 known ABV and serving combinations match hand-calculated values to one
@@ -69,10 +74,26 @@ describe('serving size line', () => {
 
 describe('total standard drinks per package (reminder line)', () => {
   it('uses the same formula on the package volume', () => {
-    // 720 × 21.1 × 0.789 ÷ 1000 = 11.986488
+    // 720 × 21.1 × 0.789 ÷ 1000 = 11.986488: more than 10, so the nearest whole number.
     expect(
       buildStatement(fsanzInputs, defaultOptions, rules).values?.display.totalStandardDrinks,
-    ).toBe('12.0');
+    ).toBe('12');
+  });
+
+  it('shows one decimal place up to 10 and the nearest whole number above (2.7.1—4(2))', () => {
+    const total = (package_ml: number, abv: number) =>
+      packageStandardDrinks(standardDrinks(package_ml, abv, rules), abv, rules);
+    expect(total(750, 13.5)).toBe('8.0'); // 7.988…
+    expect(total(1267.4271229404309, 10)).toBe('10.0'); // exactly 10 is not more than 10
+    expect(total(700, 40)).toBe('22'); // 22.092, not 22.1
+    expect(total(4000, 12.5)).toBe('39'); // 39.45, not 39.5
+    expect(total(30000, 5)).toBe('118'); // 118.35, not 118.4
+  });
+
+  it('is not required at 0.5% ABV or less (2.7.1—4(1)(b))', () => {
+    expect(packageStandardDrinks(0.1, 0.4, rules)).toBeNull();
+    expect(packageStandardDrinks(0.3, 0.5, rules)).toBeNull();
+    expect(packageStandardDrinks(0.3, 0.6, rules)).toBe('0.3');
   });
 
   it('rounds exact halves up: 4 L cask at 12.5% is 39.45 → 39.5', () => {
@@ -127,15 +148,15 @@ describe('energy', () => {
     expect(d?.energyPer100mlKj).toBe('1230');
   });
 
-  it('derives Cal from unrounded kJ ÷ 4.184 when Cal is shown', () => {
+  it('derives Cal from unrounded kJ ÷ 4.18 (Schedule 11, S11—2(4)) when Cal is shown', () => {
     const values = buildStatement(
       fsanzInputs,
       { width_mm: 50, energy_units: 'kj_cal' },
       rules,
     ).values;
-    // 355.2 ÷ 4.184 = 84.894…; 592 ÷ 4.184 = 141.491…
-    expect(values?.display.energyPerServingCal).toBe('84.9');
-    expect(values?.display.energyPer100mlCal).toBe('141');
+    // 355.2 ÷ 4.18 = 84.976…; 592 ÷ 4.18 = 141.626…
+    expect(values?.display.energyPerServingCal).toBe('85');
+    expect(values?.display.energyPer100mlCal).toBe('142');
   });
 
   it('allows fewer significant figures, never more', () => {

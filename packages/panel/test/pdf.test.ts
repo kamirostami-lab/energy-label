@@ -107,7 +107,7 @@ describe('PDF export (Build Brief 01 section 8)', () => {
   it('records title, dates, a stable document ID and Trapped in XMP and the Info dictionary', async () => {
     const { xmp, raw, doc } = await inspectPdf((await pdf()).bytes);
     expect(doc.getTitle()).toBe('Energy statement: FSANZ guidance example');
-    expect(doc.getSubject()).toBe('FSANZ energy statement, rules 1.0.0');
+    expect(doc.getSubject()).toBe(`FSANZ energy statement, rules ${rules.version}`);
     expect(doc.getCreationDate()?.toISOString()).toBe('2026-09-30T00:00:00.000Z');
     expect(xmp).toContain(
       '<rdf:li xml:lang="x-default">Energy statement: FSANZ guidance example</rdf:li>',

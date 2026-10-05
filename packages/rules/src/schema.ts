@@ -98,8 +98,18 @@ const rulesSchema = z
         .strict(),
     ),
     existing_duties: entry(z.array(text).min(1)),
+    package_standard_drinks: entry(
+      z
+        .object({
+          required_above_abv_percent: z.number().nonnegative(),
+          decimal_places: z.number().int().min(0).max(3),
+          whole_number_above: z.number().positive(),
+        })
+        .strict(),
+    ),
     standard_drink_ethanol_g: entry(z.number().positive()),
     ethanol_density_g_per_ml: entry(z.number().positive()),
+    alcohol_energy_kj_per_g: entry(z.number().positive()),
     kj_per_cal: entry(z.number().positive()),
     servings_decimal_places: entry(z.number().int().min(0).max(3)),
     min_rule_weight_pt: entry(z.number().positive()),

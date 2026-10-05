@@ -143,12 +143,44 @@ describe('input checks', () => {
     expect(result.exportable).toBe(true);
   });
 
-  it('warns when an entered Cal value does not match kJ ÷ 4.184', () => {
+  it('warns when an entered Cal value does not match kJ ÷ 4.18', () => {
     expect(
       codes(buildStatement({ ...fsanzInputs, cal_per_100ml: 141.5 }, defaultOptions, rules)),
     ).not.toContain('CAL_MISMATCH');
     const result = buildStatement({ ...fsanzInputs, cal_per_100ml: 160 }, defaultOptions, rules);
     expect(find(result, 'CAL_MISMATCH')?.severity).toBe('warning');
+  });
+
+  it('warns when the energy is below what the alcohol alone provides', () => {
+    // 40% × 0.789 g/mL × 29 kJ/g = 915.2 kJ per 100 mL from the alcohol alone.
+    const perServing = buildStatement(
+      { abv: 40, package_ml: 700, serving_ml: 30, kj_per_100ml: 277 },
+      defaultOptions,
+      rules,
+    );
+    const warning = find(perServing, 'ENERGY_BELOW_ALCOHOL');
+    expect(warning?.severity).toBe('warning');
+    expect(warning?.field).toBe('kj_per_100ml');
+    expect(warning?.message).toContain('about 915 kJ per 100 mL');
+    expect(perServing.exportable).toBe(true);
+    const spirit = { abv: 40, package_ml: 700, serving_ml: 30, kj_per_100ml: 924.6 };
+    expect(codes(buildStatement(spirit, defaultOptions, rules))).not.toContain(
+      'ENERGY_BELOW_ALCOHOL',
+    );
+    expect(codes(buildStatement(fsanzInputs, defaultOptions, rules))).not.toContain(
+      'ENERGY_BELOW_ALCOHOL',
+    );
+    // 13.5% gives 308.9 kJ; a calculator's rounding (3%) is allowed for, a Cal value is not.
+    const wine = (kj_per_100ml: number) =>
+      codes(
+        buildStatement(
+          { abv: 13.5, package_ml: 750, serving_ml: 150, kj_per_100ml },
+          defaultOptions,
+          rules,
+        ),
+      );
+    expect(wine(300)).not.toContain('ENERGY_BELOW_ALCOHOL');
+    expect(wine(74)).toContain('ENERGY_BELOW_ALCOHOL');
   });
 
   it('warns when standard drinks per serving round to zero', () => {

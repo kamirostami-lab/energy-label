@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- Energy Panel artwork. Text is outlined: no fonts required. 1 user unit = 1 mm. -->
-<svg xmlns="http://www.w3.org/2000/svg" width="40mm" height="15.284mm" viewBox="0 0 40 15.284" role="img" data-rules-version="1.0.0">
+<svg xmlns="http://www.w3.org/2000/svg" width="40mm" height="15.284mm" viewBox="0 0 40 15.284" role="img" data-rules-version="1.1.0">
 <title>ENERGY INFORMATION</title>
 <desc>ENERGY INFORMATION. Servings per can: 1. Serving size: 375 mL (0.1 standard drinks). Energy, Average quantity per serving: 281 kJ. Energy, Average quantity per 100 mL: 75 kJ.</desc>
 <g id="energy-panel" fill="#000000">

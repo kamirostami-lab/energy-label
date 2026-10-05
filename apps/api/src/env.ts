@@ -1,13 +1,15 @@
 // Worker bindings and variables the API reads. Secrets (RESEND_API_KEY, STRIPE_SECRET_KEY,
 // STRIPE_WEBHOOK_SECRET) are set with `wrangler secret put` or in the Cloudflare dashboard, never
 // in the repository.
-import type { D1Database, R2Bucket } from '@cloudflare/workers-types';
+import type { D1Database, R2Bucket, RateLimit } from '@cloudflare/workers-types';
 
 export interface Env {
   /** Accounts, SKUs and export records. */
   DB?: D1Database;
   /** Exported files. */
   EXPORTS?: R2Bucket;
+  /** Per-IP limit on the visitors' free preview export (a Workers Rate Limiting binding). */
+  FREE_EXPORT_LIMIT?: RateLimit;
   /** Resend API key for sign-in emails (a Wrangler secret). */
   RESEND_API_KEY?: string;
   /** Sender for sign-in emails, e.g. "Energy Panel <sign-in@example.com>". */

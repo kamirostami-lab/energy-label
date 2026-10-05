@@ -5,7 +5,6 @@ import type { D1Database } from '@cloudflare/workers-types';
 import {
   accountById,
   accountByStripeCustomer,
-  addExportCredit,
   recordPurchase,
   updateSubscription,
   type AccountRow,
@@ -83,24 +82,28 @@ async function applyCheckout(session: StripeCheckoutSession, ctx: BillingContext
     ctx.log({ event: 'stripe_unknown_product', object: 'checkout.session' });
     return 'unknown_product';
   }
-  const recorded = await recordPurchase(ctx.db, {
-    checkout_session_id: session.id,
-    account_id: account.id,
-    product: product.id,
-    amount_total: session.amount_total,
-    currency: session.currency,
-    created_at: ctx.now.toISOString(),
-  });
-  if (!recorded) return 'duplicate';
-  ctx.log({ event: 'purchase', product: product.id });
-  if (product.mode === 'payment') {
-    await addExportCredit(ctx.db, account.id);
-    return 'export_credit';
-  }
+  // The purchase and a bought export's credit are written together, so a failure leaves neither
+  // and Stripe's retry grants the credit; a redelivered event grants nothing.
+  const { recorded, credited } = await recordPurchase(
+    ctx.db,
+    {
+      checkout_session_id: session.id,
+      account_id: account.id,
+      product: product.id,
+      amount_total: session.amount_total,
+      currency: session.currency,
+      created_at: ctx.now.toISOString(),
+    },
+    product.mode === 'payment',
+  );
+  if (recorded) ctx.log({ event: 'purchase', product: product.id });
+  if (product.mode === 'payment') return credited ? 'export_credit' : 'duplicate';
+  // A plan is brought into line on every delivery (syncing is idempotent), so a retry after a
+  // failed Stripe request still applies it.
   if (session.subscription) {
     return syncSubscription(await ctx.stripe.retrieveSubscription(session.subscription), ctx);
   }
-  return 'subscribed';
+  return recorded ? 'subscribed' : 'duplicate';
 }
 
 /** Brings the account's plan into line with a subscription as Stripe has it now. */
@@ -125,6 +128,15 @@ export async function syncSubscription(
     return 'stale';
   }
   if (exporting && !product) ctx.log({ event: 'stripe_unknown_price', object: 'subscription' });
+  if (
+    exporting &&
+    account.subscription_id &&
+    account.subscription_id !== subscription.id &&
+    EXPORTING_STATUSES.includes(account.subscription_status ?? '')
+  ) {
+    // Two live plans on one account: the newer one is recorded, the other needs refunding.
+    ctx.log({ event: 'stripe_second_subscription', object: 'subscription' });
+  }
   await updateSubscription(ctx.db, account.id, {
     plan: exporting ? planFor(product) : 'free',
     subscription_id: subscription.id,

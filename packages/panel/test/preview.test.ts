@@ -2,18 +2,19 @@ import pako from 'pako';
 import { describe, expect, it } from 'vitest';
 import {
   BEVERAGE_TYPES,
+  PREVIEW_EXPORT_PX_PER_MM,
   PREVIEW_LIMITS,
   buildProofSheet,
   buildStatement,
   crc32,
   encodeGreyPng,
   exportArtwork,
+  exportPreviewImage,
   planStatement,
   previewScale,
   rasterizePanel,
   renderPreviewPng,
   watermarkCommands,
-  watermarkHex,
   type GreyImage,
 } from '../src/index.ts';
 import type { PanelLayout } from '../src/layout.ts';
@@ -155,35 +156,37 @@ describe('PREVIEW watermark', () => {
     expect(Math.min(...ys)).toBeGreaterThan(0);
     expect(Math.max(...ys)).toBeLessThan(layout.height);
     expect(Math.abs(Math.min(...xs) + Math.max(...xs) - layout.width)).toBeLessThan(1);
-    expect(watermarkHex('black')).toBe('#E0E0E0');
-    expect(watermarkHex('white')).toBe('#808080');
   });
 
   const request = { issuedOn: '2026-09-30', org: 'Komms-Haus', sku: 'Test' };
 
-  it('marks free preview SVG and PDF exports and names them "-preview"', async () => {
-    const svg = await exportArtwork(fsanzInputs, { width_mm: 50 }, rules, {
-      format: 'svg',
-      ...request,
-      watermark: true,
-    });
-    const text = Buffer.from(svg.bytes).toString('utf8');
-    expect(svg.fileName).toBe('20260930-komms-haus-test-energy-panel-50mm-preview.svg');
-    expect(text.indexOf('<path id="preview-watermark" fill="#E0E0E0"')).toBeGreaterThan(0);
-    expect(text.indexOf('preview-watermark')).toBeLessThan(text.indexOf('<g id="energy-panel"'));
-    expect(text).toContain('watermarked, not for print');
+  it('exports the free preview as a 300 dpi PNG with the mark burned in, named "-preview"', () => {
+    const file = exportPreviewImage(fsanzInputs, { width_mm: 50 }, rules, request);
+    expect(file.fileName).toBe('20260930-komms-haus-test-energy-panel-50mm-preview.png');
+    expect(file.mediaType).toBe('image/png');
+    const decoded = decodePng(file.bytes);
+    const image = rasterizePanel(
+      layoutFor(),
+      'black',
+      previewScale(layoutFor(), PREVIEW_EXPORT_PX_PER_MM),
+    );
+    expect([decoded.width, decoded.height]).toEqual([image.width, image.height]);
+    expect(decoded.width).toBe(Math.ceil(50 * PREVIEW_EXPORT_PX_PER_MM - 1e-9));
+    expect(Buffer.from(decoded.pixels).equals(Buffer.from(image.pixels))).toBe(true);
+    expect(decoded.pixels).toContain(224); // the mark, in the pixels themselves
+    const white = exportPreviewImage(
+      fsanzInputs,
+      { width_mm: 50, colour: 'white' },
+      rules,
+      request,
+    );
+    expect(white.fileName).toBe('20260930-komms-haus-test-energy-panel-50mm-white-preview.png');
+  });
 
-    const pdf = await exportArtwork(fsanzInputs, { width_mm: 50, colour: 'white' }, rules, {
-      format: 'pdf14',
-      ...request,
-      watermark: true,
-    });
-    expect(pdf.fileName).toBe('20260930-komms-haus-test-energy-panel-50mm-white-pdf14-preview.pdf');
-    const { content, doc, raw } = await inspectPdf(pdf.bytes);
-    expect(content.indexOf('0 0 0 0.5 k')).toBeLessThan(content.indexOf('0 0 0 0 k'));
-    expect(doc.getTitle()).toBe('Energy statement preview: Test');
-    expect(doc.getSubject()).toContain('watermarked preview, not for print');
-    expect(raw).not.toMatch(/\/Font/);
+  it('refuses a blocked statement, as the artwork export does', () => {
+    expect(() =>
+      exportPreviewImage({ ...fsanzInputs, kj_per_100ml: null }, { width_mm: 50 }, rules, request),
+    ).toThrow(/KJ_MISSING/);
   });
 
   it('leaves paid exports untouched', async () => {
@@ -205,9 +208,31 @@ describe('PREVIEW watermark', () => {
       { watermark: true },
     );
     expect(proof.fileName).toBe('20260930-komms-haus-test-energy-panel-50mm-proof-preview.pdf');
-    const { content, doc } = await inspectPdf(proof.bytes);
-    expect(content.match(/^0 0 0 0\.12 k$/gm)).toHaveLength(2);
+    const { content, doc, raw } = await inspectPdf(proof.bytes);
+    // Both panels are images with the mark burned in: no vector panel to lift out of the file.
+    expect(content.match(/^\/Im\d Do$/gm)).toEqual(['/Im0 Do', '/Im1 Do']);
+    expect(raw.match(/\/Subtype \/Image/g)).toHaveLength(2);
+    expect(raw).toContain('/ColorSpace /DeviceGray');
+    expect(raw).not.toMatch(/\/Font/);
     expect(doc.getTitle()).toBe('Energy statement proof (preview): Test');
+
+    const paid = await buildProofSheet(fsanzInputs, { width_mm: 50 }, rules, {
+      producer: 'Komms-Haus',
+      sku: 'Test',
+      issuedOn: '2026-09-30',
+    });
+    expect(Buffer.from(paid.bytes).toString('latin1')).not.toMatch(/\/Subtype \/Image/);
+  });
+
+  it('keeps a spot preview proof free of the separation, its panels being images', async () => {
+    const proof = await buildProofSheet(
+      fsanzInputs,
+      { width_mm: 50, colour: 'spot' },
+      rules,
+      { producer: 'Komms-Haus', sku: 'Test', issuedOn: '2026-09-30' },
+      { watermark: true },
+    );
+    expect(Buffer.from(proof.bytes).toString('latin1')).not.toContain('/Separation');
   });
 });
 

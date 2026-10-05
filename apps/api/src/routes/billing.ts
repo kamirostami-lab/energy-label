@@ -7,9 +7,19 @@
 // portal pages. Logs carry event names and product ids only.
 import type { Hono } from 'hono';
 import { z } from 'zod';
-import { applyStripeEvent, subscriptionExporting } from '../billing/entitlements.ts';
+import {
+  applyStripeEvent,
+  subscriptionExporting,
+  syncSubscription,
+} from '../billing/entitlements.ts';
 import { localFakeStripe, type FakeStripe } from '../billing/fake.ts';
-import { ON_SALE, PRODUCTS, productById, type Product } from '../billing/products.ts';
+import {
+  EXPORTING_STATUSES,
+  ON_SALE,
+  PRODUCTS,
+  productById,
+  type Product,
+} from '../billing/products.ts';
 import {
   stripeApi,
   verifyStripeSignature,
@@ -28,6 +38,11 @@ import { isLocalhost, noStore, problem, readBody } from '../http.ts';
 import { recordStripeEvent, setStripeCustomer, skuById, stripeEventSeen } from '../store.ts';
 
 const PRICE_CACHE_MS = 10 * 60_000;
+/**
+ * How long a plan's Checkout Session takes payment. Stripe's minimum is 30 minutes; one more keeps
+ * a skewed clock from being refused. A short life narrows the window for paying for two plans.
+ */
+const SUBSCRIPTION_CHECKOUT_SECONDS = 31 * 60;
 const priceCache = new WeakMap<Stripe, { at: number; prices: Map<string, StripePrice> }>();
 const apiClients = new Map<string, Stripe>();
 
@@ -137,12 +152,14 @@ export function registerBillingRoutes(app: Hono<AppEnv>, deps: Deps) {
         message: 'Payments are not available yet.',
       });
     }
-    if (product.mode === 'subscription' && subscriptionExporting(account, deps.now())) {
-      return problem(c, {
+    const alreadySubscribed = () =>
+      problem(c, {
         status: 409,
         error: 'already_subscribed',
         message: 'Your plan is already active. Change or cancel it under Manage billing.',
       });
+    if (product.mode === 'subscription' && subscriptionExporting(account, deps.now())) {
+      return alreadySubscribed();
     }
     const skuId = read.body.skuId;
     if (skuId && !(await skuById(db, account.id, skuId))) {
@@ -156,6 +173,16 @@ export function registerBillingRoutes(app: Hono<AppEnv>, deps: Deps) {
           account.id,
           (await stripe.createCustomer(account.email, account.id)).id,
         ));
+      // A plan bought in another tab may not have reached us by webhook yet: ask Stripe first.
+      if (product.mode === 'subscription' && account.stripe_customer_id) {
+        const live = (await stripe.subscriptions(customer)).find((s) =>
+          EXPORTING_STATUSES.includes(s.status),
+        );
+        if (live) {
+          await syncSubscription(live, { db, log: deps.log });
+          return alreadySubscribed();
+        }
+      }
       // Back to the SKU being exported, or to the plans page.
       const origin = new URL(c.req.url).origin;
       const back = skuId ? `${origin}/?sku=${encodeURIComponent(skuId)}&` : `${origin}/billing?`;
@@ -170,6 +197,11 @@ export function registerBillingRoutes(app: Hono<AppEnv>, deps: Deps) {
         successUrl: `${back}checkout=complete&product=${product.id}`,
         cancelUrl: `${back}checkout=cancelled&product=${product.id}`,
         ...(taxRate ? { taxRate } : {}),
+        ...(product.mode === 'subscription'
+          ? {
+              expiresAt: Math.floor(deps.now().getTime() / 1000) + SUBSCRIPTION_CHECKOUT_SECONDS,
+            }
+          : {}),
       });
       deps.log({ event: 'checkout_started', product: product.id });
       return c.json({ url: session.url }, 200, noStore);

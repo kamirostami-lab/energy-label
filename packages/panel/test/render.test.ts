@@ -140,12 +140,12 @@ describe('prescribed format (Standard 2.7.1—4B(3))', () => {
       layoutFor({ ...fsanzInputs, kj_per_100ml }, { width_mm: 50, energy_units: 'kj_cal' })
         .texts.map((t) => t.text)
         .filter((text) => /kJ|Cal/.test(text));
-    expect(lines(592)).toEqual(['355\u00a0kJ (84.9\u00a0Cal)', '592\u00a0kJ (141\u00a0Cal)']);
+    expect(lines(592)).toEqual(['355\u00a0kJ (85\u00a0Cal)', '592\u00a0kJ (142\u00a0Cal)']);
     expect(lines(21400)).toEqual([
       '12800\u00a0kJ',
       '(3070\u00a0Cal)',
       '21400\u00a0kJ',
-      '(5110\u00a0Cal)',
+      '(5120\u00a0Cal)',
     ]);
   });
 
@@ -178,7 +178,7 @@ describe('content', () => {
     expect(svg).toContain('<title>ENERGY INFORMATION</title>');
     expect(svg).toContain(
       '<desc>ENERGY INFORMATION. Servings per package: 12. Serving size: 60 mL (1 standard drink). ' +
-        'Energy, Average quantity per serving: 355 kJ (84.9 Cal). Energy, Average quantity per 100 mL: 592 kJ (141 Cal).</desc>',
+        'Energy, Average quantity per serving: 355 kJ (85 Cal). Energy, Average quantity per 100 mL: 592 kJ (142 Cal).</desc>',
     );
   });
 
@@ -191,8 +191,8 @@ describe('content', () => {
     const result = buildStatement(fsanzInputs, defaultOptions, rules);
     const content = panelContent(result.values!, result.options!, rules);
     const text = JSON.stringify(content);
-    expect(result.values!.display.totalStandardDrinks).toBe('12.0');
-    expect(text).not.toContain('12.0');
+    expect(result.values!.display.totalStandardDrinks).toBe('12');
+    expect(text).not.toContain('in the package');
     expect(text).not.toMatch(/total/i);
   });
 

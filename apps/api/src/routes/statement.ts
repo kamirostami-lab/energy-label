@@ -1,7 +1,8 @@
 // POST /api/preview: statement values, findings and a watermarked PNG of the panel. The preview
 //   is pixels, never vector artwork, so the page cannot be copied as print-ready art (D8).
 // POST /api/export: the free preview export for visitors without an account (D3): one per
-//   browser, watermarked, marked by an HttpOnly cookie.
+//   browser, marked by an HttpOnly cookie, and limited per IP. Its files are pixels only (the
+//   panel as a PNG and a proof with image panels), so the cookie is not what protects paid files.
 import {
   ExportBlockedError,
   ProofInputError,
@@ -16,7 +17,7 @@ import { getCookie, setCookie } from 'hono/cookie';
 import type { AppEnv, Deps } from '../context.ts';
 import { base64 } from '../crypto.ts';
 import { renderExportFiles } from '../export-files.ts';
-import { noStore, problem, readBody, resolveIssueDate } from '../http.ts';
+import { noStore, overLimit, problem, readBody, resolveIssueDate } from '../http.ts';
 import { exportRequestSchema, previewRequestSchema } from '../schema.ts';
 
 /** Marks that this browser has used its free preview export. */
@@ -75,6 +76,13 @@ export function registerStatementRoutes(app: Hono<AppEnv>, deps: Deps) {
         error: 'free_export_used',
         message:
           'This browser has used its free preview export. Sign in to buy print-ready exports.',
+      });
+    }
+    if (await overLimit(c, c.env?.FREE_EXPORT_LIMIT)) {
+      return problem(c, {
+        status: 429,
+        error: 'rate_limited',
+        message: 'Too many exports from this network. Try again in a minute.',
       });
     }
     const read = await readBody(c, exportRequestSchema);

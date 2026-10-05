@@ -6,9 +6,10 @@
 //   GET  /api/skus/:id               one SKU with its exports
 //   PUT  /api/skus/:id               update it
 //   POST /api/skus/:id/exports       export it: files to R2, a record with the output hash
-//   GET  /api/exports/:id/files/:kind  download one file (svg, pdf, pdf14, proof)
-// An export is a watermarked preview (one free per account, decision D3) or print-ready, paid
-// for by the account's plan or by one bought export (session 5).
+//   GET  /api/exports/:id/files/:kind  download one file (svg, pdf, pdf14, png, proof)
+// An export is a watermarked preview (one free per account, decision D3; a PNG and a proof with
+// image panels) or print-ready, paid for by the account's plan or by one bought export
+// (session 5). What pays for it is spent in the same batch that writes the export record.
 import { planStatement, slug, ExportBlockedError } from '@energy-panel/panel';
 import type { StatementInputs, StatementOptions } from '@energy-panel/panel';
 import { BEVERAGE_TYPES } from '@energy-panel/panel/settings';
@@ -31,19 +32,14 @@ import { noStore, problem, readBody, resolveIssueDate } from '../http.ts';
 import { accountExportSchema, skuBodySchema, type SkuBody } from '../schema.ts';
 import {
   accountById,
-  addExportCredit,
-  claimFreeExport,
+  commitExport,
   exportById,
   exportsForAccount,
   exportsForSku,
-  insertExport,
   insertSku,
-  recordRulesVersion,
-  releaseFreeExport,
   skuById,
   skusForAccount,
   updateSku,
-  useExportCredit,
   type AccountRow,
   type ExportRow,
   type SkuRow,
@@ -53,12 +49,20 @@ import { stripeFor } from './billing.ts';
 import { exportProblem, nameProblem } from './statement.ts';
 
 const VINTAGE_MAX_LENGTH = 40;
-const KEY_COLUMN: Record<FileKind, keyof ExportRow> = {
+const KEY_COLUMN = {
   svg: 'svg_key',
   pdf: 'pdf_key',
   pdf14: 'pdf14_key',
+  png: 'png_key',
   proof: 'proof_key',
-};
+} as const satisfies Record<FileKind, keyof ExportRow>;
+
+/** The storage keys of an export's files, in FILE_KINDS order, without the kinds it lacks. */
+const storedFiles = (row: ExportRow) =>
+  FILE_KINDS.flatMap((kind) => {
+    const key = row[KEY_COLUMN[kind]];
+    return key === null ? [] : [{ kind, key }];
+  });
 
 const flag = (value: boolean | null | undefined) =>
   value === true ? 1 : value === false ? 0 : null;
@@ -102,9 +106,9 @@ function exportJson(row: ExportRow) {
     watermarked: row.watermarked === 1,
     entitlement: row.entitlement,
     outputHash: row.output_hash,
-    files: FILE_KINDS.map((kind) => ({
+    files: storedFiles(row).map(({ kind, key }) => ({
       kind,
-      fileName: String(row[KEY_COLUMN[kind]]).split('/').pop(),
+      fileName: key.split('/').pop(),
       url: `/api/exports/${row.id}/files/${kind}`,
     })),
   };
@@ -414,42 +418,41 @@ export function registerSkuRoutes(app: Hono<AppEnv>, deps: Deps) {
         message: 'File storage is not set up yet.',
       });
     }
-    // What pays for it: the free preview (D3), the account's plan, or one bought export.
+    // What pays for it: the free preview (D3), the account's plan, or one bought export. Checked
+    // now, spent only when the export record is written (commitExport), so a failed or abandoned
+    // export costs nothing and two at once cannot both use the last one.
     const edition = read.body.edition ?? 'preview';
+    const freeUsed = () =>
+      problem(c, {
+        status: 403,
+        error: 'free_export_used',
+        message:
+          'This account has used its free preview export. Buy an export or a plan for print-ready files.',
+      });
+    const unpaid = () =>
+      problem(c, {
+        status: 402,
+        error: 'payment_required',
+        message: 'Buy this export, or a plan, to export print-ready files.',
+      });
     let entitlement: ExportRow['entitlement'];
     if (edition === 'preview') {
-      if (!(await claimFreeExport(s.db, s.account.id, at()))) {
-        return problem(c, {
-          status: 403,
-          error: 'free_export_used',
-          message:
-            'This account has used its free preview export. Buy an export or a plan for print-ready files.',
-        });
-      }
+      if (s.account.free_export_used_at !== null) return freeUsed();
       entitlement = 'free';
     } else {
       let account = s.account;
       // A plan whose period ran out without news from Stripe: ask Stripe before refusing.
       if (subscriptionLapsed(account, deps.now())) account = await refreshSubscription(c, account);
-      if (subscriptionExporting(account, deps.now())) {
-        entitlement = 'subscription';
-      } else if (await useExportCredit(s.db, account.id)) {
-        entitlement = 'credit';
-      } else {
-        return problem(c, {
-          status: 402,
-          error: 'payment_required',
-          message: 'Buy this export, or a plan, to export print-ready files.',
-        });
-      }
+      if (subscriptionExporting(account, deps.now())) entitlement = 'subscription';
+      else if (account.export_credits > 0) entitlement = 'credit';
+      else return unpaid();
     }
-    const handBack = () =>
-      entitlement === 'free'
-        ? releaseFreeExport(s.db, s.account.id)
-        : entitlement === 'credit'
-          ? addExportCredit(s.db, s.account.id)
-          : Promise.resolve();
 
+    const exportId = deps.newId();
+    const key = (fileName: string) => `exports/${s.account.id}/${exportId}/${fileName}`;
+    const stored: string[] = [];
+    // Files of an export that was not recorded are removed, so storage holds only recorded ones.
+    const removeStored = () => bucket.delete(stored).catch(() => undefined);
     try {
       const inputs = skuInputs(sku);
       const plan = planStatement(inputs, JSON.parse(sku.options_json) as StatementOptions, rules);
@@ -465,18 +468,14 @@ export function registerSkuRoutes(app: Hono<AppEnv>, deps: Deps) {
       const issuedOn = resolveIssueDate(read.body.issuedOn, deps.now());
       const watermark = edition === 'preview';
       const files = await renderExportFiles(inputs, options, details, issuedOn, watermark, rules);
-      const exportId = deps.newId();
-      const key = (fileName: string) => `exports/${s.account.id}/${exportId}/${fileName}`;
       for (const file of files) {
+        stored.push(key(file.fileName));
         await bucket.put(key(file.fileName), file.bytes, {
           httpMetadata: { contentType: file.mediaType },
           customMetadata: { exportId, kind: file.kind },
         });
       }
-      const byKind = Object.fromEntries(files.map((f) => [f.kind, key(f.fileName)])) as Record<
-        FileKind,
-        string
-      >;
+      const byKind = new Map(files.map((f) => [f.kind, key(f.fileName)]));
       const row: ExportRow = {
         id: exportId,
         sku_id: sku.id,
@@ -487,21 +486,26 @@ export function registerSkuRoutes(app: Hono<AppEnv>, deps: Deps) {
         details_json: JSON.stringify(details),
         issued_on: issuedOn,
         watermarked: watermark ? 1 : 0,
-        svg_key: byKind.svg,
-        pdf_key: byKind.pdf,
-        pdf14_key: byKind.pdf14,
-        proof_key: byKind.proof,
+        svg_key: byKind.get('svg') ?? null,
+        pdf_key: byKind.get('pdf') ?? null,
+        pdf14_key: byKind.get('pdf14') ?? null,
+        png_key: byKind.get('png') ?? null,
+        proof_key: byKind.get('proof')!,
         output_hash: await outputHash(files),
         created_at: at(),
         entitlement,
       };
-      await insertExport(s.db, row);
       rulesSha ??= sha256Hex(JSON.stringify(rules.file));
-      await recordRulesVersion(s.db, rules.version, await rulesSha, at());
+      const sha256 = await rulesSha;
+      if (!(await commitExport(s.db, row, { version: rules.version, sha256 }, at()))) {
+        // Another export used it while this one rendered.
+        await removeStored();
+        return entitlement === 'free' ? freeUsed() : unpaid();
+      }
       deps.log({ event: 'account_export', exportId, files: files.length, edition, entitlement });
       return c.json({ export: exportJson(row) }, 201, noStore);
     } catch (error) {
-      await handBack();
+      await removeStored();
       const refused = exportProblem(error);
       if (refused) return problem(c, refused.problem, refused.extra);
       throw error;
@@ -514,10 +518,10 @@ export function registerSkuRoutes(app: Hono<AppEnv>, deps: Deps) {
     const kind = c.req.param('kind') as FileKind;
     const row = await exportById(s.db, s.account.id, c.req.param('id'));
     const bucket = c.env?.EXPORTS;
-    if (!row || !FILE_KINDS.includes(kind) || !bucket) {
+    const key = row && FILE_KINDS.includes(kind) ? row[KEY_COLUMN[kind]] : null;
+    if (!key || !bucket) {
       return problem(c, { status: 404, error: 'not_found', message: 'No such file.' });
     }
-    const key = String(row[KEY_COLUMN[kind]]);
     const object = await bucket.get(key);
     if (!object) return problem(c, { status: 404, error: 'not_found', message: 'No such file.' });
     return new Response(object.body as unknown as ReadableStream, {

@@ -193,31 +193,37 @@ describe('account exports', () => {
     expect(res.status).toBe(201);
     const exported = (await json(res)).export;
     expect(exported).toMatchObject({ rulesVersion: rules.version, watermarked: true });
-    expect(exported.files.map((f: { fileName: string }) => f.fileName)).toEqual([
-      '20260930-komms-haus-reserve-tawny-energy-panel-50mm-preview.svg',
-      '20260930-komms-haus-reserve-tawny-energy-panel-50mm-preview.pdf',
-      '20260930-komms-haus-reserve-tawny-energy-panel-50mm-pdf14-preview.pdf',
-      '20260930-komms-haus-reserve-tawny-energy-panel-50mm-proof-preview.pdf',
+    // A preview is pixels only: the panel image and the proof with image panels.
+    expect(
+      exported.files.map((f: { kind: string; fileName: string }) => [f.kind, f.fileName]),
+    ).toEqual([
+      ['png', '20260930-komms-haus-reserve-tawny-energy-panel-50mm-preview.png'],
+      ['proof', '20260930-komms-haus-reserve-tawny-energy-panel-50mm-proof-preview.pdf'],
     ]);
     expect(events.at(-1)).toEqual({
       event: 'account_export',
       exportId: exported.id,
-      files: 4,
+      files: 2,
       edition: 'preview',
       entitlement: 'free',
     });
 
-    const pdf = await call('GET', `exports/${exported.id}/files/pdf`, undefined, cookie);
-    expect(pdf.headers.get('content-disposition')).toBe(
+    const proof = await call('GET', `exports/${exported.id}/files/proof`, undefined, cookie);
+    expect(proof.headers.get('content-disposition')).toBe(
       `attachment; filename="${exported.files[1].fileName}"`,
     );
     expect(
-      Buffer.from(await pdf.arrayBuffer())
+      Buffer.from(await proof.arrayBuffer())
         .subarray(0, 8)
         .toString('latin1'),
     ).toBe('%PDF-1.6');
+    const png = await call('GET', `exports/${exported.id}/files/png`, undefined, cookie);
+    expect(png.headers.get('content-type')).toBe('image/png');
+    expect((await call('GET', `exports/${exported.id}/files/svg`, undefined, cookie)).status).toBe(
+      404,
+    );
     const other = await signIn(unique());
-    expect((await call('GET', `exports/${exported.id}/files/pdf`, undefined, other)).status).toBe(
+    expect((await call('GET', `exports/${exported.id}/files/proof`, undefined, other)).status).toBe(
       404,
     );
 
@@ -265,6 +271,38 @@ describe('account exports', () => {
     expect((await json(second)).error).toBe('free_export_used');
   });
 
+  it('spends nothing and keeps no files when storage fails part-way', async () => {
+    const { call, signIn } = setup();
+    const cookie = await signIn(unique());
+    await call('PATCH', 'account', { orgName: 'Komms-Haus' }, cookie);
+    const { sku } = await json(await call('POST', 'skus', skuBody(), cookie));
+    let puts = 0;
+    const flaky = new Proxy(env.EXPORTS!, {
+      get(target, prop) {
+        if (prop === 'put') {
+          return async (...args: Parameters<typeof target.put>) => {
+            if (++puts === 2) throw new Error('R2 unavailable');
+            return target.put(...args);
+          };
+        }
+        const value = Reflect.get(target, prop);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+    const failed = await call('POST', `skus/${sku.id}/exports`, {}, cookie, {
+      ...env,
+      EXPORTS: flaky,
+    } as Env);
+    expect(failed.status).toBe(500);
+    const me = (await json(await call('GET', 'auth/me', undefined, cookie))).account;
+    expect(me.freeExportAvailable).toBe(true);
+    const stored = await env.EXPORTS!.list({ prefix: `exports/${me.id}/` });
+    expect(stored.objects).toEqual([]);
+    expect((await json(await call('GET', `skus/${sku.id}`, undefined, cookie))).exports).toEqual(
+      [],
+    );
+  });
+
   it('keeps the free export when a statement is blocked or storage is missing', async () => {
     const { call, signIn } = setup();
     const cookie = await signIn(unique());
@@ -289,7 +327,7 @@ describe('account exports', () => {
     const done = await call('POST', `skus/${sku.id}/exports`, {}, cookie);
     expect(done.status).toBe(201);
     expect((await json(done)).export.files[0].fileName).toBe(
-      '20260930-chateau-lune-reserve-tawny-energy-panel-50mm-preview.svg',
+      '20260930-chateau-lune-reserve-tawny-energy-panel-50mm-preview.png',
     );
     const me = await json(await call('GET', 'auth/me', undefined, cookie));
     expect(me.account.freeExportAvailable).toBe(false);
