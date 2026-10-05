@@ -275,14 +275,16 @@ Preview command    npx wrangler d1 migrations apply DB --remote --config wrangle
   `wrangler.preview-migrations.jsonc` points the migrations command at the preview database.
   Migrations are tracked in each database's `d1_migrations` table and applied on every deploy,
   which needs the Workers Builds API token to carry **D1 Edit**.
-- **R2**: buckets `energy-panel-exports` and `energy-panel-exports-preview`. R2 must be enabled on
-  the account and both buckets must exist before a deploy, or `wrangler deploy` fails. The
-  Workers Builds of `main` up to 097cc14 failed on the missing bucket. R2 was enabled and both
-  buckets created on 5 October 2026 (automatic location, which placed them in eastern North
-  America; the D1 databases are in Oceania). Migrations 0001 to 0003 were applied to both
-  databases the same day through the Cloudflare API and recorded in `d1_migrations`. The
-  dashboard's deploy command was then plain `npx wrangler deploy`: until it gains the migrations
-  step above, a new migration must be applied by hand.
+- **R2**: buckets `energy-panel-exports-oc` and `energy-panel-exports-oc-preview`, created on
+  5 October 2026 with the Oceania location hint (`wrangler r2 bucket create <name> --location oc`),
+  beside the D1 databases. A hint is honoured only the first time a name is used, so the earlier
+  `energy-panel-exports` and `energy-panel-exports-preview`, placed in eastern North America, could
+  not be moved; they are empty and can be deleted once nothing deploys with them. A location hint
+  is best effort, not a residency guarantee. R2 must be enabled on the account and both buckets
+  must exist before a deploy, or `wrangler deploy` fails, as the Workers Builds of `main` up to
+  097cc14 did. Migrations 0001 to 0003 were applied to both databases on 5 October 2026 through
+  the Cloudflare API and recorded in `d1_migrations`; since then the deploy command carries the
+  migrations step and the build token D1 Edit.
 - **Rate limiting**: the `ratelimits` binding `FREE_EXPORT_LIMIT` (namespace 1001) needs no setup
   beyond the deploy.
 - **Mail**: `RESEND_API_KEY` as a secret (dashboard or `wrangler secret put`). `MAIL_FROM` goes in
